@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subchapter K · GraphRAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f4f3ee; --surface:#ffffff; --ink:#171a1f; --soft:#5c606a;
+  --rule:#e4e2db; --rule-2:#d2cfc6;
+  --blue:#27405f; --blue-soft:#eaeef4;
+  --green:#2f6b4f; --green-soft:#e9f1ec;
+  --rust:#9a3b2e; --rust-soft:#f4e8e5;
+  --gold:#8d6a1f; --gold-soft:#f2ecdc;
+  --teal:#2c5f63; --teal-soft:#e6eeee;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --maxw:1140px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--soft)}
+.mono{font-family:var(--mono)}
+h1,h2,h3{font-family:var(--serif);font-weight:500;letter-spacing:-.01em;margin:0}
+.cite{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--blue)}
+.btn{font-family:var(--sans);font-size:14px;font-weight:500;border:1px solid var(--blue);
+  background:var(--blue);color:#fff;border-radius:2px;padding:9px 16px;cursor:pointer;transition:.15s}
+.btn:hover{background:#1d3149}
+.btn.ghost{background:transparent;color:var(--blue)}
+.btn.ghost:hover{background:var(--blue-soft)}
+
+/* top bar */
+header.bar{position:sticky;top:0;z-index:50;background:rgba(244,243,238,.88);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--rule)}
+.bar .row{display:flex;align-items:center;gap:22px;height:60px}
+.brand{display:flex;align-items:baseline;gap:9px;font-family:var(--serif);font-size:20px;font-weight:600}
+.brand .tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:#fff;background:var(--blue);padding:3px 6px;border-radius:2px;transform:translateY(-2px)}
+nav.links{display:flex;gap:18px;margin-left:6px}
+nav.links a{font-size:13.5px;color:var(--ink)}
+nav.links a:hover{color:var(--blue);text-decoration:none}
+.asof{margin-left:auto;display:flex;align-items:center;gap:8px}
+.asof label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--soft)}
+.asof input{font-family:var(--mono);font-size:13px;border:1px solid var(--rule-2);border-radius:2px;
+  padding:6px 8px;background:var(--surface);color:var(--ink)}
+
+/* hero */
+.hero{padding:64px 0 30px;border-bottom:1px solid var(--rule)}
+.hero h1{font-size:46px;line-height:1.04;max-width:15ch}
+.hero .lede{font-family:var(--serif);font-size:19px;color:#33373f;max-width:60ch;margin-top:18px}
+.stats{display:flex;gap:26px;margin-top:24px;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column}
+.stat b{font-family:var(--mono);font-size:21px;font-weight:600;color:var(--blue)}
+.stat span{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft)}
+
+/* console */
+.console{margin-top:34px}
+.qbar{display:flex;gap:10px}
+.qbar input{flex:1;font-family:var(--serif);font-size:18px;padding:14px 16px;
+  border:1px solid var(--rule-2);border-radius:3px;background:var(--surface);color:var(--ink)}
+.qbar input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{font-family:var(--sans);font-size:12.5px;border:1px solid var(--rule-2);background:var(--surface);
+  color:#3b3f47;border-radius:999px;padding:6px 12px;cursor:pointer;transition:.15s}
+.chip:hover{border-color:var(--blue);color:var(--blue)}
+
+/* sections */
+section.block{padding:54px 0;border-bottom:1px solid var(--rule)}
+.block .head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px}
+.block .head h2{font-size:27px}
+.block .head .n{font-family:var(--mono);font-size:12px;color:var(--soft)}
+.lead{font-family:var(--serif);font-size:17px;color:#3a3e46;max-width:66ch;margin:-8px 0 24px}
+
+/* result card */
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+.card .pad{padding:22px 24px}
+.sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--soft);margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.tierhdr{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--soft);margin:16px 0 7px;padding-bottom:5px;border-bottom:1px solid var(--rule)}
+.tierhdr:first-child{margin-top:0}
+.auth{display:flex;gap:12px;padding:7px 0;align-items:baseline}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;transform:translateY(5px)}
+.auth .c{flex:none;min-width:128px}
+.auth .s{font-family:var(--serif);font-size:15px;color:#2b2f37;line-height:1.45}
+.t-statute{color:var(--blue)} .bg-statute{background:var(--blue)}
+.t-reg{color:var(--teal)} .bg-reg{background:var(--teal)}
+.t-rule{color:var(--gold)} .bg-rule{background:var(--gold)}
+.t-form{color:var(--soft)} .bg-form{background:var(--soft)}
+
+/* verification pill */
+.pill{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  padding:2px 6px;border-radius:2px;font-weight:600;white-space:nowrap}
+.pill.ok{background:var(--green-soft);color:var(--green)}
+.pill.sup{background:var(--rust-soft);color:var(--rust)}
+.pill.rep{background:var(--gold-soft);color:var(--gold)}
+.pill.ctx{background:#edecE8;background:#eceae3;color:var(--soft)}
+
+/* DAG waterfall (the signature) */
+.dag{margin-top:22px;background:#fbfaf7;border:1px solid var(--rule);border-radius:4px;padding:18px 20px}
+.dag .title{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--blue);margin-bottom:14px}
+.drow{display:grid;grid-template-columns:26px 78px 150px 1fr;gap:10px;align-items:center;
+  padding:5px 0;border-top:1px dashed var(--rule)}
+.drow:first-of-type{border-top:none}
+.dseq{font-family:var(--mono);font-size:12px;color:var(--soft);text-align:right}
+.ddir{font-family:var(--mono);font-size:11px;font-weight:600;text-align:center;border-radius:2px;padding:2px 0}
+.dir-up{background:var(--green-soft);color:var(--green)}
+.dir-dn{background:var(--rust-soft);color:var(--rust)}
+.dir-lim{background:var(--blue-soft);color:var(--blue)}
+.dcite{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--ink)}
+.dmech{font-family:var(--serif);font-size:14px;color:#3a3e46}
+.floor{margin-top:12px;padding-top:11px;border-top:2px solid var(--rule-2);font-family:var(--mono);
+  font-size:12px;color:var(--rust);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+/* callouts */
+.callout{margin-top:20px;border:1px solid var(--blue);background:var(--blue-soft);border-radius:4px;
+  padding:16px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.callout .txt{flex:1;min-width:240px}
+.callout .txt b{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--blue);display:block;margin-bottom:3px}
+.callout .txt span{font-family:var(--serif);font-size:15px}
+.excl{margin-top:18px;border-left:3px solid var(--rust);padding:4px 0 4px 14px}
+.excl .h{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--rust);margin-bottom:6px}
+.excl .e{font-family:var(--mono);font-size:12.5px;color:#46474b;padding:2px 0}
+
+/* calculator */
+.calcgrid{display:grid;grid-template-columns:340px 1fr;gap:26px}
+.calcform{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:20px}
+.fg{margin-bottom:14px}
+.fg .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);margin-bottom:6px}
+.frow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0}
+.frow label{font-family:var(--serif);font-size:14px;color:#33373f}
+.frow input{width:120px;font-family:var(--mono);font-size:13px;text-align:right;border:1px solid var(--rule-2);
+  border-radius:2px;padding:5px 7px;background:#fff}
+.frow input:focus{outline:none;border-color:var(--blue)}
+.calcout{background:#fbfaf7;border:1px solid var(--rule);border-radius:4px;padding:22px}
+.tr{display:grid;grid-template-columns:1fr 120px 120px;gap:10px;font-family:var(--mono);font-size:12.5px;
+  padding:6px 0;border-top:1px dashed var(--rule)}
+.tr:first-child{border-top:none}
+.tr .num{text-align:right}
+.tr.run .num:last-child{color:var(--blue);font-weight:600}
+.results3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+.r3{border:1px solid var(--rule);border-radius:4px;padding:14px;background:#fff;text-align:center}
+.r3 b{font-family:var(--mono);font-size:22px;font-weight:600;display:block}
+.r3 span{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+.r3.gain b{color:var(--rust)} .r3.basis b{color:var(--blue)} .r3.susp b{color:var(--gold)}
+
+/* currency */
+.curgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.curcol{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:18px 20px}
+.curcol h3{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.curcol .item{font-family:var(--mono);font-size:12.5px;padding:5px 0;border-top:1px dashed var(--rule);
+  display:flex;justify-content:space-between;gap:12px}
+.curcol .item:first-of-type{border-top:none}
+.curcol .item .why{color:var(--soft);font-size:11.5px}
+.hd-force{color:var(--green)} .hd-not{color:var(--gold)} .hd-rem{color:var(--rust)} .hd-sup{color:var(--rust)}
+.datechips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+
+/* corpus */
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:center}
+.filters input{flex:1;min-width:200px;font-family:var(--sans);font-size:14px;padding:9px 12px;
+  border:1px solid var(--rule-2);border-radius:3px;background:var(--surface)}
+.seg{display:flex;border:1px solid var(--rule-2);border-radius:3px;overflow:hidden}
+.seg button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  border:none;background:var(--surface);color:var(--soft);padding:8px 11px;cursor:pointer;border-right:1px solid var(--rule)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--blue);color:#fff}
+.corpgrid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:var(--surface)}
+.nlist{max-height:560px;overflow:auto;border-right:1px solid var(--rule)}
+.nrow{display:flex;gap:10px;align-items:baseline;padding:9px 16px;border-bottom:1px solid var(--rule);cursor:pointer}
+.nrow:hover{background:var(--paper)}
+.nrow.sel{background:var(--blue-soft)}
+.nrow .nc{font-family:var(--mono);font-size:12.5px;font-weight:500;min-width:120px;flex:none}
+.nrow .nl{font-family:var(--serif);font-size:13.5px;color:#3a3e46}
+.ndetail{padding:22px 24px;max-height:560px;overflow:auto}
+.ndetail .dc{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--blue)}
+.ndetail .dl{font-family:var(--serif);font-size:17px;margin:2px 0 12px}
+.ndetail .ds{font-family:var(--serif);font-size:15px;color:#2b2f37;line-height:1.5}
+.edges{margin-top:18px}
+.edges .eh{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft);margin:14px 0 6px}
+.edge{font-family:var(--mono);font-size:12px;padding:3px 0;color:#3a3e46}
+.edge .rel{color:var(--blue);font-weight:500}
+.meta{font-family:var(--mono);font-size:11.5px;color:var(--soft);margin-top:10px}
+
+/* how it works */
+.layers{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px}
+.layer{border:1px solid var(--rule);border-radius:4px;background:var(--surface);padding:18px 20px}
+.layer .ln{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--blue);margin-bottom:7px}
+.layer h3{font-size:18px;margin-bottom:7px}
+.layer p{font-family:var(--serif);font-size:14.5px;color:#33373f;margin:0}
+.note{font-family:var(--serif);font-size:15px;color:#33373f;max-width:72ch;margin:8px 0}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin:8px 0 26px}
+.legend span{font-family:var(--mono);font-size:11.5px;color:#3a3e46;display:flex;align-items:center;gap:7px}
+
+/* hubs */
+.hubpick{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}
+.hubcard{border:1px solid var(--rule-2);background:var(--surface);border-radius:4px;padding:11px 14px;cursor:pointer;transition:.15s;min-width:148px}
+.hubcard:hover{border-color:var(--blue)}
+.hubcard.on{border-color:var(--blue);background:var(--blue-soft)}
+.hubcard .hn{font-family:var(--serif);font-size:15px;font-weight:500}
+.hubcard .hm{display:flex;align-items:center;gap:8px;margin-top:6px}
+.hubcard .hcount{font-family:var(--mono);font-size:11px;color:var(--soft)}
+.hubview{background:var(--surface);border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.hubtop{display:grid;grid-template-columns:380px 1fr}
+.hubradial{border-right:1px solid var(--rule);padding:14px;display:flex;align-items:center;justify-content:center;background:#fbfaf7}
+.hubmeta{padding:24px}
+.hubmeta .ht{font-family:var(--serif);font-size:26px;font-weight:500}
+.hubmeta .hd{font-family:var(--serif);font-size:16px;color:#2b2f37;line-height:1.5;margin-top:11px}
+.hubbody{padding:6px 24px 24px}
+.relcols{display:grid;grid-template-columns:1fr 1fr;gap:6px 30px;margin-top:6px}
+.relgroup{margin-top:14px}
+.relh{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:7px}
+.relitem{display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px dashed var(--rule);cursor:pointer}
+.relitem:first-of-type{border-top:none}
+.relitem:hover .rc{text-decoration:underline}
+.relitem .rc{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--blue);min-width:116px;flex:none}
+.relitem .rs{font-family:var(--serif);font-size:13.5px;color:#3a3e46}
+.spoke{cursor:pointer}
+.spoke:hover .spokebox{stroke:var(--blue);stroke-width:1.5}
+/* calculator caption */
+.calcnote{font-family:var(--serif);font-size:14.5px;color:#33373f;background:var(--gold-soft);
+  border-left:3px solid var(--gold);border-radius:3px;padding:11px 14px;margin-bottom:16px;max-width:82ch}
+.calcnote b{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--gold);display:block;margin-bottom:4px}
+
+footer{padding:40px 0 64px;color:var(--soft)}
+footer .d{font-family:var(--serif);font-size:14px;max-width:74ch;color:#46474b}
+footer .b{font-family:var(--mono);font-size:11px;letter-spacing:.08em;margin-top:14px}
+
+@media (max-width:880px){
+  nav.links{display:none}
+  .hero h1{font-size:34px}
+  .calcgrid,.curgrid,.layers{grid-template-columns:1fr}
+  .hubtop{grid-template-columns:1fr}
+  .hubradial{border-right:none;border-bottom:1px solid var(--rule)}
+  .relcols{grid-template-columns:1fr}
+  .corpgrid{grid-template-columns:1fr}
+  .nlist{max-height:300px;border-right:none;border-bottom:1px solid var(--rule)}
+  .drow{grid-template-columns:22px 64px 1fr;}
+  .drow .dmech{display:none}
+  .tr{grid-template-columns:1fr 90px 90px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .fade{animation:fade .4s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap row">
+    <div class="brand">Subchapter&nbsp;K <span class="tag">GraphRAG</span></div>
+    <nav class="links">
+      <a href="#ask">Ask</a><a href="#hubs">Hubs</a><a href="#compute">Compute</a><a href="#currency">Currency</a>
+      <a href="#corpus">Corpus</a><a href="#how">How it works</a>
+    </nav>
+    <div class="asof">
+      <label for="asof">As of</label>
+      <input type="date" id="asof">
+    </div>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Definition-centric retrieval for partnership tax · IRC §§701–777</div>
+    <h1>The tax code as a graph that knows what still applies.</h1>
+    <p class="lede">Ask a partnership-tax question and get back the governing authority, the ordered
+      basis computation, and a date-aware currency check — with the arithmetic routed to a
+      deterministic engine, never guessed from text.</p>
+    <div class="stats" id="stats"></div>
+
+    <div class="console" id="ask">
+      <div class="qbar">
+        <input id="q" type="text" placeholder="e.g. what feeds a partner's outside basis"
+               autocomplete="off" spellcheck="false">
+        <button class="btn" id="qbtn">Ask</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div id="askout" style="margin-top:22px"></div>
+    </div>
+  </div>
+</div>
+
+<section class="block" id="hubs">
+  <div class="wrap">
+    <div class="head"><h2>Hubs</h2><span class="n">defined terms · the center of the graph</span></div>
+    <p class="lead">Every term is a hub, and authority attaches to it by typed edges. Pick one to see what defines
+      it, what feeds it, and which cases and rulings shape it. Computed terms show their formula as an ordered
+      DAG; click any connected citation to open it in the corpus.</p>
+    <div class="hubpick" id="hubpick"></div>
+    <div class="hubview" id="hubview"></div>
+  </div>
+</section>
+
+<section class="block" id="compute">
+  <div class="wrap">
+    <div class="head"><h2>Outside-basis engine</h2><span class="n">deterministic · §722 → §704(d)</span></div>
+    <p class="lead">The graph routes a basis question here. The engine applies the waterfall in order with a
+      zero floor: an over-distribution becomes §731(a) gain, a loss beyond basis is suspended under §704(d).</p>
+    <div class="chips" id="calcchips" style="margin-bottom:14px"></div>
+    <div id="calcnote"></div>
+    <div class="calcgrid">
+      <div class="calcform" id="calcform"></div>
+      <div class="calcout" id="calcout"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="currency">
+  <div class="wrap">
+    <div class="head"><h2>Currency &amp; supersession</h2><span class="n">Layer 0 · validity intervals + revoke chain</span></div>
+    <p class="lead">Move the date to see what was in force when. The gate blocks anything not yet effective,
+      removed, or revoked — including the 2025 rollback of the basis-shifting enforcement package and OBBBA
+      making §199A permanent.</p>
+    <div class="datechips" id="datechips"></div>
+    <div class="curgrid" id="curout"></div>
+  </div>
+</section>
+
+<section class="block" id="corpus">
+  <div class="wrap">
+    <div class="head"><h2>Corpus</h2><span class="n" id="corpcount"></span></div>
+    <p class="lead">Every node carries an original plain-law note and typed edges to the terms it touches.
+      Primary-authority citations only; no third-party prose. Click a citation to see its relationships.</p>
+    <div class="filters">
+      <input id="cfilter" type="text" placeholder="filter by citation, term, or keyword">
+      <div class="seg" id="cseg">
+        <button data-f="all" class="on">All</button>
+        <button data-f="term">Terms</button>
+        <button data-f="provision">Statute</button>
+        <button data-f="regulation">Reg</button>
+        <button data-f="ruling">Ruling</button>
+        <button data-f="case">Case</button>
+      </div>
+    </div>
+    <div class="corpgrid">
+      <div class="nlist" id="nlist"></div>
+      <div class="ndetail" id="ndetail"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="how">
+  <div class="wrap">
+    <div class="head"><h2>How it works</h2><span class="n">four layers</span></div>
+    <div class="legend">
+      <span><i class="dot bg-statute"></i> statute / authority &amp; basis increase</span>
+      <span><i class="dot" style="background:var(--rust)"></i> removed / revoked &amp; basis decrease</span>
+      <span><i class="dot" style="background:var(--green)"></i> in force / verified</span>
+    </div>
+    <div class="layers">
+      <div class="layer"><div class="ln">Layer 0 — currency gate</div><h3>Date-aware</h3>
+        <p>Validity intervals plus typed <span class="mono">supersedes</span> edges. As of a transaction date,
+          stale, removed, and revoked authority is hard-blocked. This caught the build's own seed going stale on §199A.</p></div>
+      <div class="layer"><div class="ln">Layer 1 — structural graph</div><h3>Definition-centric</h3>
+        <p>Terms are hubs; statutes, regs, rulings, and cases attach by typed edges. A computed term like
+          outside basis is a hub whose inbound edges <em>are</em> the formula.</p></div>
+      <div class="layer"><div class="ln">Layer 3 — retrieval</div><h3>Hybrid + routed</h3>
+        <p>Lexical seed (BM25) → graph expansion → authority-tier rerank with seeds preserved → currency filter.
+          Basis questions are routed to the engine, not reasoned out of text.</p></div>
+      <div class="layer"><div class="ln">Posture</div><h3>Seed, not ground</h3>
+        <p>Every node is unverified seed for attorney review. Recent items were checked against IRS / Federal
+          Register sources and tagged verified, superseded, reported, or context before encoding.</p></div>
+    </div>
+    <p class="note"><b>The calculator is not graph data.</b> The graph reasons about authority; the engine
+      computes numbers. They are decoupled on purpose, because language models mis-order the basis waterfall
+      and drop the floor. The engine self-validates against the two IRS LB&amp;I worked examples.</p>
+    <p class="note">This page runs the same engine as the Python system, entirely in your browser — the corpus
+      is exported from it, and the retrieval, calculator, and currency logic are ported and checked to parity.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="d">Demonstration only. Not legal or tax advice, and not a substitute for primary-source
+      research or professional judgment. The corpus is unverified seed; verify every citation against
+      controlling authority before relying on it.</p>
+    <p class="b">SUBCHAPTER K · GRAPHRAG — LOCAL DEMO</p>
+  </div>
+</footer>
+
+<script>/* engine.js — browser port of the Subchapter K GraphRAG engine.
+   Mirrors retrieve.py / calculator.py / graph.py. ISO date strings compare
+   lexicographically, which is equivalent to the Python date comparisons. */
+(function (root) {
+  "use strict";
+
+  function tokenize(s) { return (s.toLowerCase().match(/[a-z0-9]+/g)) || []; }
+  function round2(x) { return Math.round((x + Number.EPSILON) * 100) / 100; }
+
+  function buildGraph(data) {
+    const nodes = data.nodes, edges = data.edges;
+    const byId = {}; nodes.forEach(n => byId[n.id] = n);
+    const adj = {}; nodes.forEach(n => adj[n.id] = []);
+    edges.forEach(e => { if (adj[e.s]) adj[e.s].push(e); if (adj[e.d]) adj[e.d].push(e); });
+
+    // BM25 over node text
+    const ids = nodes.map(n => n.id);
+    const docs = {}, tok = {}, dl = {}; let total = 0;
+    nodes.forEach(n => {
+      docs[n.id] = [n.citation, n.label, n.syn || "", (n.tags || []).join(" "),
+                    n.id.replace(/_/g, " ")].join(" ");
+    });
+    ids.forEach(i => { const t = tokenize(docs[i]); tok[i] = t; dl[i] = t.length; total += t.length; });
+    const avgdl = total / Math.max(1, ids.length);
+    const df = {}; ids.forEach(i => { new Set(tok[i]).forEach(t => df[t] = (df[t] || 0) + 1); });
+    const N = ids.length;
+    const idf = t => { const n = df[t] || 0; return Math.log(1 + (N - n + 0.5) / (n + 0.5)); };
+    function score(query, i) {
+      const tf = {}; tok[i].forEach(t => tf[t] = (tf[t] || 0) + 1);
+      let s = 0; const k1 = 1.5, b = 0.75;
+      tokenize(query).forEach(t => { if (tf[t]) s += idf(t) * (tf[t] * (k1 + 1)) / (tf[t] + k1 * (1 - b + b * dl[i] / avgdl)); });
+      return s;
+    }
+    function topk(query, k) {
+      const sc = ids.map(i => [score(query, i), i]).filter(x => x[0] > 0)
+        .sort((a, b) => (b[0] - a[0]) || (a[1] > b[1] ? -1 : 1));
+      return sc.slice(0, k);
+    }
+    return { nodes, edges, byId, adj, bm25: { score, topk } };
+  }
+
+  function supersededBy(g, id) {
+    const e = g.adj[id].find(e => e.d === id && e.t === "supersedes");
+    return e ? [e.s, g.byId[e.s].vf] : null;
+  }
+
+  function applicable(g, id, asOf) {
+    if (!asOf) return true;
+    const n = g.byId[id];
+    if (n.vf && asOf < n.vf) return false;
+    if (n.vt && asOf > n.vt) return false;
+    const sup = supersededBy(g, id);
+    if (sup && sup[1] && asOf >= sup[1]) return false;
+    return true;
+  }
+
+  function isComputation(q) {
+    return q.toLowerCase().includes("basis") &&
+      /\b(comput|calculat|figure|how much|what.+basis|ending basis|gain|suspend)/i.test(q);
+  }
+
+  function retrieve(g, question, asOf, topN, seedK) {
+    topN = topN || 16; seedK = seedK || 8;
+    const seeds = g.bm25.topk(question, seedK).map(x => x[1]);
+
+    const visited = new Set(seeds); let frontier = seeds.slice();
+    for (let h = 0; h < 2; h++) {
+      const nxt = [];
+      frontier.forEach(id => g.adj[id].forEach(e => {
+        const o = e.s === id ? e.d : e.s;
+        if (!visited.has(o)) { visited.add(o); nxt.push(o); }
+      }));
+      frontier = nxt;
+    }
+    Array.from(visited).forEach(id => {
+      const n = g.byId[id];
+      if (n && n.ntype === "term" && n.sub === "computed")
+        g.adj[id].forEach(e => visited.add(e.s === id ? e.d : e.s));
+    });
+
+    const prot = new Set();
+    seeds.forEach(sid => {
+      const sn = g.byId[sid];
+      if (sn && sn.ntype === "term" && sn.sub === "computed")
+        g.adj[sid].forEach(e => {
+          if (e.d === sid && ["computes", "adjusts", "uses"].includes(e.t)) prot.add(e.s);
+          if (e.s === sid && e.t === "overflow") prot.add(e.d);
+        });
+    });
+    const relOf = id => g.bm25.score(question, id) + (prot.has(id) ? 5 : 0);
+
+    const cand = [], excluded = [];
+    visited.forEach(id => {
+      if (applicable(g, id, asOf)) cand.push(id);
+      else { const n = g.byId[id]; excluded.push([n.citation, n.vf, n.vt]); }
+    });
+    const candSet = new Set(cand);
+
+    const seen = new Set(), mustOrder = [];
+    seeds.concat(Array.from(prot).sort()).forEach(id => { if (!seen.has(id)) { seen.add(id); mustOrder.push(id); } });
+    const must = mustOrder.filter(id => candSet.has(id));
+    const mustSet = new Set(must);
+    // node id is the final tiebreak so truncation is deterministic and identical to the
+    // Python engine (retrieve.py), independent of Set/dict iteration order.
+    const byIdAsc = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const others = cand.filter(id => !mustSet.has(id))
+      .sort((a, b) => (g.byId[a].tier - g.byId[b].tier) || (relOf(b) - relOf(a)) || byIdAsc(a, b));
+    const keep = must.slice();
+    for (const id of others) { if (keep.length >= topN) break; keep.push(id); }
+
+    const results = keep.map(id => [g.byId[id], relOf(id)])
+      .sort((x, y) => (x[0].tier - y[0].tier) || (y[1] - x[1]) || byIdAsc(x[0].id, y[0].id));
+    const computedHubs = results.filter(r => r[0].ntype === "term" && r[0].sub === "computed").map(r => r[0]);
+    return { question, asOf, results, seeds, excluded, computedHubs, isComputation: isComputation(question) };
+  }
+
+  // Ordered inbound computation edges for a computed-term hub + member ids.
+  function dag(g, hubId) {
+    const rows = [], members = new Set();
+    g.adj[hubId].forEach(e => {
+      if (e.d === hubId && ["computes", "adjusts", "uses"].includes(e.t)) {
+        members.add(e.s);
+        rows.push({ seq: e.seq == null ? 99 : e.seq, grp: e.grp || "-", dir: e.dir || "-",
+                    cite: g.byId[e.s].citation, m: e.m });
+      }
+      if (e.s === hubId && e.t === "overflow") members.add(e.d);
+    });
+    // Sort the full row (seq, grp, dir, cite, mechanism) to match retrieve._dag's tuple
+    // sort in Python, so seq-tied constraint rows order identically in both engines.
+    const c = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+    rows.sort((a, b) => (a.seq - b.seq) || c(a.grp, b.grp) || c(a.dir, b.dir) || c(a.cite, b.cite) || c(a.m, b.m));
+    const overflow = g.adj[hubId].filter(e => e.s === hubId && e.t === "overflow")
+      .map(e => g.byId[e.d].citation + " (" + e.m + ")");
+    return { rows, overflow, members };
+  }
+
+  function computeBasis(input) {
+    const d = Object.assign({
+      beginning_basis: 0, cash_contributed: 0, property_contributed_basis: 0, liability_increase: 0,
+      income_taxable: 0, income_tax_exempt: 0, depletion_excess: 0, cash_distributed: 0,
+      property_distributed_basis: 0, liability_decrease: 0, nondeductible: 0, oil_gas_depletion: 0, losses: 0
+    }, input);
+    const trace = [["A. Beginning basis", d.beginning_basis, d.beginning_basis]];
+    const inc = d.cash_contributed + d.property_contributed_basis + d.liability_increase +
+                d.income_taxable + d.income_tax_exempt + d.depletion_excess;
+    let b = d.beginning_basis + inc;
+    trace.push(["B. + increases  [\u00A7722, \u00A7752(a), \u00A7705(a)(1)]", inc, b]);
+    const dist = d.cash_distributed + d.property_distributed_basis + d.liability_decrease;
+    const gain = Math.max(0, dist - b); b = Math.max(0, b - dist);
+    trace.push(["C. \u2212 distributions  [\u00A7733, \u00A7752(b)] (floor 0)", -dist, b]);
+    const red = d.nondeductible + d.oil_gas_depletion; b = Math.max(0, b - red);
+    trace.push(["D. \u2212 nondeductible / depletion  [\u00A7705(a)(2)(B),(a)(3)] (floor 0)", -red, b]);
+    const lossAllowed = Math.min(d.losses, b), lossSusp = d.losses - lossAllowed; b = b - lossAllowed;
+    trace.push(["E. \u2212 loss allowed  [\u00A7704(d) limit]", -lossAllowed, b]);
+    return {
+      ending: round2(b), gain: round2(gain), lossAllowed: round2(lossAllowed),
+      lossSuspended: round2(lossSusp), trace,
+      authorities: ["IRC 722", "IRC 742", "IRC 752", "IRC 705", "IRC 733", "IRC 704(d)", "IRC 731(a)"]
+    };
+  }
+
+  function currencyReport(g, asOf) {
+    const inForce = [], notYet = [], expired = [], superseded = [], seen = new Set();
+    g.nodes.forEach(n => {
+      if (!(n.vf || n.vt)) return;
+      seen.add(n.id);
+      const sup = supersededBy(g, n.id);
+      if (n.vf && asOf < n.vf) notYet.push([n.citation, "effective " + n.vf]);
+      else if (n.vt && asOf > n.vt) expired.push([n.citation, "removed " + n.vt]);
+      else if (sup && sup[1] && asOf >= sup[1]) superseded.push([n.citation, "superseded by " + g.byId[sup[0]].citation]);
+      else inForce.push([n.citation, "in force"]);
+    });
+    new Set(g.edges.filter(e => e.t === "supersedes").map(e => e.d)).forEach(id => {
+      if (seen.has(id)) return;
+      const sup = supersededBy(g, id), c = g.byId[id].citation;
+      if (sup && sup[1] && asOf >= sup[1]) superseded.push([c, "superseded by " + g.byId[sup[0]].citation]);
+      else inForce.push([c, "in force"]);
+    });
+    return { asOf, inForce, notYet, expired, superseded };
+  }
+
+  const API = { buildGraph, retrieve, dag, computeBasis, currencyReport, applicable, supersededBy, tokenize };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  root.SubK = API;
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
+<script>const DATA = {"nodes": [{"id": "t_outside_basis", "ntype": "term", "citation": "Outside basis", "label": "Partner's basis in its interest", "tier": 1, "sub": "computed", "syn": "Cash + adjusted basis of contributed property + share of liabilities, adjusted annually; never below zero.", "tags": ["basis", "outside basis", "distribution", "loss limitation"], "vf": null, "vt": null}, {"id": "t_inside_basis", "ntype": "term", "citation": "Inside basis", "label": "Partnership's basis in its assets", "tier": 1, "sub": "computed", "syn": "Carryover from contributions; adjustable under \u00a7743(b)/\u00a7734(b) only with a \u00a7754 election.", "tags": ["basis", "inside basis", "754", "step-up"], "vf": null, "vt": null}, {"id": "t_capital_account", "ntype": "term", "citation": "704(b) book capital account", "label": "Economic-equity capital account", "tier": 1, "sub": "computed", "syn": "Maintained under Treas. Reg. 1.704-1(b)(2)(iv); measures economic equity; may be negative; distinct from tax basis and FMV.", "tags": ["capital account", "704(b)", "substantial economic effect", "book"], "vf": null, "vt": null}, {"id": "t_partnership_liability", "ntype": "term", "citation": "Partnership liability", "label": "Recourse vs nonrecourse liability", "tier": 1, "sub": "interpretive", "syn": "Recourse if a partner bears the economic risk of loss; nonrecourse if none does. A partner's share is part of outside basis under \u00a7752.", "tags": ["liability", "recourse", "nonrecourse", "752"], "vf": null, "vt": null}, {"id": "t_hot_assets", "ntype": "term", "citation": "Hot assets", "label": "Unrealized receivables & inventory", "tier": 1, "sub": "statutory", "syn": "Unrealized receivables (\u00a7751(c)) and inventory (\u00a7751(d)); generate ordinary income on a sale of an interest or a disproportionate distribution.", "tags": ["hot assets", "751", "ordinary income", "unrealized receivables", "inventory"], "vf": null, "vt": null}, {"id": "t_disguised_sale", "ntype": "term", "citation": "Disguised sale", "label": "Contribution that is in substance a sale", "tier": 1, "sub": "interpretive", "syn": "A contribution plus a related transfer that in substance is a sale; tested under \u00a7707 and the 1.707 regs; two-year presumption.", "tags": ["disguised sale", "707", "two-year", "qualified liability"], "vf": null, "vt": null}, {"id": "t_built_in_gain", "ntype": "term", "citation": "Built-in gain (704(c))", "label": "Precontribution gain/loss", "tier": 1, "sub": "statutory", "syn": "Difference between FMV and adjusted basis of contributed property at contribution; allocated back to the contributing partner under \u00a7704(c).", "tags": ["built-in gain", "704(c)", "ceiling rule", "remedial", "curative"], "vf": null, "vt": null}, {"id": "t_754_election", "ntype": "term", "citation": "Section 754 election", "label": "Inside-basis adjustment election", "tier": 1, "sub": "statutory", "syn": "Election enabling inside-basis adjustments under \u00a7743(b) (transfers) and \u00a7734(b) (distributions); generally irrevocable.", "tags": ["754", "election", "743(b)", "734(b)"], "vf": null, "vt": null}, {"id": "t_partnership_status", "ntype": "term", "citation": "Partnership status", "label": "Whether a partnership exists", "tier": 1, "sub": "interpretive", "syn": "Whether an arrangement is a partnership for tax purposes; a facts-and-circumstances / intent inquiry.", "tags": ["partnership", "existence", "intent", "Culbertson", "Luna"], "vf": null, "vt": null}, {"id": "t_marketable_securities", "ntype": "term", "citation": "Marketable securities (731(c))", "label": "Securities treated as money", "tier": 1, "sub": "statutory", "syn": "Treated as money under \u00a7731(c) for distribution gain, reduced by the partner's share of built-in gain in the securities.", "tags": ["marketable securities", "731(c)", "money"], "vf": null, "vt": null}, {"id": "t_qualified_liability", "ntype": "term", "citation": "Qualified liability", "label": "Liability outside disguised-sale", "tier": 3, "sub": "statutory", "syn": "A liability (e.g., debt >2 years old encumbering contributed property) whose assumption does not by itself trigger the disguised-sale rules.", "tags": ["qualified liability", "707-5", "encumbered"], "vf": null, "vt": null}, {"id": "s721", "ntype": "provision", "citation": "IRC 721", "label": "Nonrecognition on contribution", "tier": 1, "sub": null, "syn": "No gain or loss on a contribution of property for a partnership interest (subject to exceptions).", "tags": ["contribution", "nonrecognition", "721"], "vf": null, "vt": null}, {"id": "s721b", "ntype": "provision", "citation": "IRC 721(b)", "label": "Investment-company exception", "tier": 1, "sub": null, "syn": "Nonrecognition does not apply to a contribution to an investment company that diversifies; built-in GAIN only.", "tags": ["investment company", "diversification", "721(b)"], "vf": null, "vt": null}, {"id": "s722", "ntype": "provision", "citation": "IRC 722", "label": "Initial outside basis (contribution)", "tier": 1, "sub": null, "syn": "Initial outside basis = cash contributed + adjusted basis of contributed property (+ \u00a7721(b) gain).", "tags": ["722", "initial basis", "contribution"], "vf": null, "vt": null}, {"id": "s723", "ntype": "provision", "citation": "IRC 723", "label": "Initial inside basis (contribution)", "tier": 1, "sub": null, "syn": "Partnership's basis in contributed property = the contributor's adjusted basis (carryover).", "tags": ["723", "carryover", "inside basis"], "vf": null, "vt": null}, {"id": "s724", "ntype": "provision", "citation": "IRC 724", "label": "Character of contributed property", "tier": 1, "sub": null, "syn": "Preserves ordinary/capital character of contributed receivables, inventory, and capital-loss property for stated periods.", "tags": ["724", "character", "five-year"], "vf": null, "vt": null}, {"id": "s704b", "ntype": "provision", "citation": "IRC 704(b)", "label": "Allocations / substantial economic effect", "tier": 1, "sub": null, "syn": "Allocations are respected if they have substantial economic effect or match the partners' interests in the partnership.", "tags": ["704(b)", "allocation", "substantial economic effect"], "vf": null, "vt": null}, {"id": "s704c", "ntype": "provision", "citation": "IRC 704(c)", "label": "Built-in gain allocations", "tier": 1, "sub": null, "syn": "Built-in gain or loss on contributed property is allocated to the contributing partner.", "tags": ["704(c)", "built-in gain", "contributed property"], "vf": null, "vt": null}, {"id": "s704d", "ntype": "provision", "citation": "IRC 704(d)", "label": "Loss limitation", "tier": 1, "sub": null, "syn": "A partner's distributive share of loss is allowed only to the extent of outside basis; the excess is suspended.", "tags": ["704(d)", "loss limitation", "suspended loss"], "vf": null, "vt": null}, {"id": "s704d3", "ntype": "provision", "citation": "IRC 704(d)(3)", "label": "Charitable / FTC in basis limit (TCJA)", "tier": 1, "sub": null, "syn": "Charitable contributions and foreign taxes are inside the \u00a7704(d) limit; donated built-in-gain property reduces basis only by the property's basis share.", "tags": ["704(d)(3)", "charitable", "foreign tax", "TCJA"], "vf": "2018-01-01", "vt": null}, {"id": "s705", "ntype": "provision", "citation": "IRC 705", "label": "Basis adjustment rules", "tier": 1, "sub": null, "syn": "Umbrella rule for adjusting outside basis by income, contributions, liabilities, distributions, losses, and nondeductible items.", "tags": ["705", "basis adjustment"], "vf": null, "vt": null}, {"id": "s705a1A", "ntype": "provision", "citation": "IRC 705(a)(1)(A)", "label": "Increase: taxable income", "tier": 1, "sub": null, "syn": "Outside basis increases by the partner's distributive share of taxable income, including capital gain.", "tags": ["705(a)(1)(A)", "income", "increase"], "vf": null, "vt": null}, {"id": "s705a1B", "ntype": "provision", "citation": "IRC 705(a)(1)(B)", "label": "Increase: tax-exempt income", "tier": 1, "sub": null, "syn": "Outside basis increases by the partner's share of tax-exempt income.", "tags": ["705(a)(1)(B)", "tax-exempt", "increase"], "vf": null, "vt": null}, {"id": "s705a1C", "ntype": "provision", "citation": "IRC 705(a)(1)(C)", "label": "Increase: excess depletion", "tier": 1, "sub": null, "syn": "Outside basis increases by percentage depletion exceeding the basis of depletable property.", "tags": ["705(a)(1)(C)", "depletion", "increase"], "vf": null, "vt": null}, {"id": "s705a2A", "ntype": "provision", "citation": "IRC 705(a)(2)(A)", "label": "Decrease: losses", "tier": 1, "sub": null, "syn": "Outside basis decreases by the partner's distributive share of losses, including capital loss.", "tags": ["705(a)(2)(A)", "loss", "decrease"], "vf": null, "vt": null}, {"id": "s705a2B", "ntype": "provision", "citation": "IRC 705(a)(2)(B)", "label": "Decrease: nondeductible expense", "tier": 1, "sub": null, "syn": "Outside basis decreases by the partner's share of nondeductible, noncapital expenditures.", "tags": ["705(a)(2)(B)", "nondeductible", "decrease"], "vf": null, "vt": null}, {"id": "s705a3", "ntype": "provision", "citation": "IRC 705(a)(3)", "label": "Decrease: oil & gas depletion", "tier": 1, "sub": null, "syn": "Outside basis decreases by the partner's share of depletion on oil and gas property.", "tags": ["705(a)(3)", "depletion", "decrease"], "vf": null, "vt": null}, {"id": "s705b", "ntype": "provision", "citation": "IRC 705(b)", "label": "Alternative basis rule", "tier": 1, "sub": null, "syn": "When the general rule is impractical, basis may be figured as the partner's share of the partnership's adjusted basis in its property.", "tags": ["705(b)", "alternative", "proportionate"], "vf": null, "vt": null}, {"id": "s707", "ntype": "provision", "citation": "IRC 707", "label": "Partner-partnership transactions", "tier": 1, "sub": null, "syn": "Governs transactions between a partner and the partnership, including disguised sales and guaranteed payments.", "tags": ["707", "disguised sale", "guaranteed payment"], "vf": null, "vt": null}, {"id": "s707c", "ntype": "provision", "citation": "IRC 707(c)", "label": "Guaranteed payments", "tier": 1, "sub": null, "syn": "Payments fixed without regard to income are ordinary income to the partner and generally deductible by the partnership.", "tags": ["707(c)", "guaranteed payment", "ordinary"], "vf": null, "vt": null}, {"id": "s731", "ntype": "provision", "citation": "IRC 731", "label": "Gain/loss on distribution", "tier": 1, "sub": null, "syn": "A partner recognizes gain only if money distributed exceeds outside basis; no loss except in limited liquidations.", "tags": ["731", "distribution", "gain"], "vf": null, "vt": null}, {"id": "s731a1", "ntype": "provision", "citation": "IRC 731(a)(1)", "label": "Gain on excess distribution", "tier": 1, "sub": null, "syn": "Gain to the extent money (incl. marketable securities and liability relief) distributed exceeds outside basis; generally capital.", "tags": ["731(a)(1)", "excess distribution", "gain"], "vf": null, "vt": null}, {"id": "s731a2", "ntype": "provision", "citation": "IRC 731(a)(2)", "label": "Loss on liquidation only", "tier": 1, "sub": null, "syn": "No loss on a current distribution; loss only on liquidation receiving solely cash, receivables, and/or inventory.", "tags": ["731(a)(2)", "loss", "liquidation"], "vf": null, "vt": null}, {"id": "s731c", "ntype": "provision", "citation": "IRC 731(c)", "label": "Marketable securities as money", "tier": 1, "sub": null, "syn": "Marketable securities are treated as money for distribution gain, reduced by the partner's share of built-in gain.", "tags": ["731(c)", "marketable securities", "money"], "vf": null, "vt": null}, {"id": "s732", "ntype": "provision", "citation": "IRC 732", "label": "Basis of distributed property", "tier": 1, "sub": null, "syn": "Distributed-property basis carries over, capped at outside basis less money (\u00a7732(a)(2)); liquidation takes remaining basis (\u00a7732(b)).", "tags": ["732", "distributed property", "basis"], "vf": null, "vt": null}, {"id": "s733", "ntype": "provision", "citation": "IRC 733", "label": "Basis reduction on distribution", "tier": 1, "sub": null, "syn": "Outside basis is reduced (not below zero) by money distributed plus the basis of property distributed.", "tags": ["733", "distribution", "decrease"], "vf": null, "vt": null}, {"id": "s734b", "ntype": "provision", "citation": "IRC 734(b)", "label": "Inside-basis adjustment (distribution)", "tier": 1, "sub": null, "syn": "Partnership adjusts inside basis on a distribution if a \u00a7754 election is in effect or there is a substantial basis reduction.", "tags": ["734(b)", "inside basis", "distribution", "754"], "vf": null, "vt": null}, {"id": "s736", "ntype": "provision", "citation": "IRC 736", "label": "Retiring-partner payments", "tier": 1, "sub": null, "syn": "Liquidation payments to a retiring or deceased partner split between property payments (\u00a7736(b)) and other payments (\u00a7736(a)).", "tags": ["736", "retirement", "liquidation"], "vf": null, "vt": null}, {"id": "s741", "ntype": "provision", "citation": "IRC 741", "label": "Sale of a partnership interest", "tier": 1, "sub": null, "syn": "Sale of an interest yields capital gain or loss equal to amount realized less outside basis, subject to \u00a7751.", "tags": ["741", "sale", "capital gain"], "vf": null, "vt": null}, {"id": "s742", "ntype": "provision", "citation": "IRC 742", "label": "Basis of purchased interest", "tier": 1, "sub": null, "syn": "Initial outside basis of a purchased interest = cost (cash + property) plus share of liabilities.", "tags": ["742", "purchase", "cost basis"], "vf": null, "vt": null}, {"id": "s743b", "ntype": "provision", "citation": "IRC 743(b)", "label": "Inside-basis adjustment (transfer)", "tier": 1, "sub": null, "syn": "On a sale/exchange of an interest, with a \u00a7754 election or substantial built-in loss, inside basis is adjusted for the transferee.", "tags": ["743(b)", "transfer", "step-up", "754"], "vf": null, "vt": null}, {"id": "s751", "ntype": "provision", "citation": "IRC 751", "label": "Hot assets", "tier": 1, "sub": null, "syn": "Recharacterizes as ordinary income the partner's share of unrealized receivables and inventory on a sale or disproportionate distribution.", "tags": ["751", "hot assets", "ordinary income"], "vf": null, "vt": null}, {"id": "s751b", "ntype": "provision", "citation": "IRC 751(b)", "label": "Disproportionate distributions", "tier": 1, "sub": null, "syn": "A distribution that shifts a partner's interest in hot assets is treated as a deemed sale producing ordinary income.", "tags": ["751(b)", "disproportionate", "ordinary income"], "vf": null, "vt": null}, {"id": "s752", "ntype": "provision", "citation": "IRC 752", "label": "Treatment of liabilities", "tier": 1, "sub": null, "syn": "A partner's share of liabilities is part of outside basis: an increase is a deemed contribution, a decrease a deemed distribution.", "tags": ["752", "liability", "deemed contribution", "deemed distribution"], "vf": null, "vt": null}, {"id": "s752a", "ntype": "provision", "citation": "IRC 752(a)", "label": "Liability increase = contribution", "tier": 1, "sub": null, "syn": "An increase in a partner's share of liabilities is treated as a contribution of money, raising outside basis.", "tags": ["752(a)", "liability increase", "increase"], "vf": null, "vt": null}, {"id": "s752b", "ntype": "provision", "citation": "IRC 752(b)", "label": "Liability decrease = distribution", "tier": 1, "sub": null, "syn": "A decrease in a partner's share of liabilities is treated as a distribution of money, lowering outside basis.", "tags": ["752(b)", "liability decrease", "decrease"], "vf": null, "vt": null}, {"id": "s754", "ntype": "provision", "citation": "IRC 754", "label": "Optional basis-adjustment election", "tier": 1, "sub": null, "syn": "Election that turns on the inside-basis adjustments of \u00a7743(b) and \u00a7734(b); once made, generally irrevocable.", "tags": ["754", "election", "irrevocable"], "vf": null, "vt": null}, {"id": "s755", "ntype": "provision", "citation": "IRC 755", "label": "Allocation of basis adjustment", "tier": 1, "sub": null, "syn": "Allocates a \u00a7743(b) or \u00a7734(b) adjustment among partnership assets by relative built-in gain and loss.", "tags": ["755", "allocation", "adjustment"], "vf": null, "vt": null}, {"id": "s737", "ntype": "provision", "citation": "IRC 737", "label": "Precontribution gain on distribution", "tier": 1, "sub": null, "syn": "A distribution to a partner who contributed 704(c) property within 7 years can trigger recognition of precontribution gain.", "tags": ["737", "seven-year", "704(c)", "mixing bowl"], "vf": null, "vt": null}, {"id": "s709", "ntype": "provision", "citation": "IRC 709", "label": "Organizational & syndication expenses", "tier": 1, "sub": null, "syn": "Organizational expenses may be amortized; syndication expenses must be capitalized and are not amortizable.", "tags": ["709", "organizational", "syndication"], "vf": null, "vt": null}, {"id": "s1012", "ntype": "provision", "citation": "IRC 1012", "label": "Cost basis", "tier": 1, "sub": null, "syn": "Basis of purchased property is its cost.", "tags": ["1012", "cost"], "vf": null, "vt": null}, {"id": "s351e", "ntype": "provision", "citation": "IRC 351(e)", "label": "Investment-company definition", "tier": 1, "sub": null, "syn": "Defines the investment-company concept imported into \u00a7721(b).", "tags": ["351(e)", "investment company"], "vf": null, "vt": null}, {"id": "s163j", "ntype": "provision", "citation": "IRC 163(j)", "label": "Business interest limitation", "tier": 1, "sub": null, "syn": "Deductible business interest limited to interest income plus 30% of adjusted taxable income; OBBBA restored the more favorable EBITDA-based ATI for years after 2024.", "tags": ["163(j)", "interest", "limitation", "EBITDA", "OBBBA"], "vf": "2018-01-01", "vt": null}, {"id": "s199A", "ntype": "provision", "citation": "IRC 199A", "label": "Qualified business income deduction", "tier": 1, "sub": null, "syn": "Up to a 20% deduction for qualified business income from a passthrough; made PERMANENT by OBBBA (P.L. 119-21), with expanded phase-in thresholds and a $400 minimum (199A(i)).", "tags": ["199A", "QBI", "passthrough deduction", "permanent", "OBBBA"], "vf": "2018-01-01", "vt": null}, {"id": "s1061", "ntype": "provision", "citation": "IRC 1061", "label": "Carried-interest holding period", "tier": 1, "sub": null, "syn": "Three-year holding period for long-term capital gain on certain carried interests.", "tags": ["1061", "carried interest", "three-year"], "vf": null, "vt": null}, {"id": "s7704", "ntype": "provision", "citation": "IRC 7704", "label": "Publicly traded partnerships", "tier": 1, "sub": null, "syn": "A publicly traded partnership is taxed as a C-corp unless 90% or more of income is qualifying passive income.", "tags": ["7704", "PTP", "publicly traded"], "vf": null, "vt": null}, {"id": "r1704_1", "ntype": "regulation", "citation": "Treas. Reg. 1.704-1", "label": "Allocations / SEE safe harbor", "tier": 3, "sub": null, "syn": "Capital-account maintenance plus the substantial-economic-effect safe harbor for allocations.", "tags": ["1.704-1", "capital account", "safe harbor"], "vf": null, "vt": null}, {"id": "r1704_2", "ntype": "regulation", "citation": "Treas. Reg. 1.704-2", "label": "Minimum gain / nonrecourse deductions", "tier": 3, "sub": null, "syn": "Rules for partnership minimum gain and the allocation of nonrecourse deductions.", "tags": ["1.704-2", "minimum gain", "nonrecourse deductions"], "vf": null, "vt": null}, {"id": "r1704_3", "ntype": "regulation", "citation": "Treas. Reg. 1.704-3", "label": "704(c) allocation methods", "tier": 3, "sub": null, "syn": "Traditional, traditional-with-curative, and remedial methods; the ceiling rule.", "tags": ["1.704-3", "traditional", "curative", "remedial", "ceiling rule"], "vf": null, "vt": null}, {"id": "r1707_3", "ntype": "regulation", "citation": "Treas. Reg. 1.707-3", "label": "Disguised-sale general rule", "tier": 3, "sub": null, "syn": "General disguised-sale test and the two-year presumption.", "tags": ["1.707-3", "disguised sale", "two-year"], "vf": null, "vt": null}, {"id": "r1707_4", "ntype": "regulation", "citation": "Treas. Reg. 1.707-4", "label": "Disguised-sale exceptions", "tier": 3, "sub": null, "syn": "Guaranteed payments, preferred returns, operating cash flow, and preformation reimbursements that are not disguised sales.", "tags": ["1.707-4", "preferred return", "operating cash flow", "preformation"], "vf": null, "vt": null}, {"id": "r1707_5", "ntype": "regulation", "citation": "Treas. Reg. 1.707-5", "label": "Liabilities & qualified liabilities", "tier": 3, "sub": null, "syn": "Liability assumptions, qualified liabilities, and debt-financed distributions; current rules apply to transfers on/after Oct 4, 2019.", "tags": ["1.707-5", "qualified liability", "debt-financed distribution"], "vf": "2019-10-04", "vt": null}, {"id": "r1752_1", "ntype": "regulation", "citation": "Treas. Reg. 1.752-1", "label": "Recourse vs nonrecourse definitions", "tier": 3, "sub": null, "syn": "Defines recourse and nonrecourse liabilities for partnership tax purposes.", "tags": ["1.752-1", "recourse", "nonrecourse", "definition"], "vf": null, "vt": null}, {"id": "r1752_2", "ntype": "regulation", "citation": "Treas. Reg. 1.752-2", "label": "Recourse liability allocation", "tier": 3, "sub": null, "syn": "Allocates recourse liabilities to the partner who bears the economic risk of loss.", "tags": ["1.752-2", "recourse", "economic risk of loss"], "vf": null, "vt": null}, {"id": "r1752_3", "ntype": "regulation", "citation": "Treas. Reg. 1.752-3", "label": "Nonrecourse liability allocation", "tier": 3, "sub": null, "syn": "Three-tier allocation of nonrecourse liabilities: minimum gain, 704(c) gain, then profits.", "tags": ["1.752-3", "nonrecourse", "three-tier", "minimum gain"], "vf": null, "vt": null}, {"id": "r1751_1", "ntype": "regulation", "citation": "Treas. Reg. 1.751-1", "label": "Hot-asset computation", "tier": 3, "sub": null, "syn": "Mechanics for computing ordinary income from hot assets on sales and disproportionate distributions.", "tags": ["1.751-1", "hot assets"], "vf": null, "vt": null}, {"id": "r1731_2", "ntype": "regulation", "citation": "Treas. Reg. 1.731-2", "label": "Marketable securities as money", "tier": 3, "sub": null, "syn": "Implements \u00a7731(c): which securities count and the built-in-gain reduction.", "tags": ["1.731-2", "marketable securities"], "vf": null, "vt": null}, {"id": "r1736_1", "ntype": "regulation", "citation": "Treas. Reg. 1.736-1", "label": "Retirement-payment allocation", "tier": 3, "sub": null, "syn": "Allocates retiring-partner payments between \u00a7736(a) and \u00a7736(b).", "tags": ["1.736-1", "retirement"], "vf": null, "vt": null}, {"id": "r1709_2", "ntype": "regulation", "citation": "Treas. Reg. 1.709-2", "label": "Org / syndication definitions", "tier": 3, "sub": null, "syn": "Defines organizational expenses (amortizable) versus syndication expenses (capitalized).", "tags": ["1.709-2", "organizational", "syndication"], "vf": null, "vt": null}, {"id": "rr84_52", "ntype": "ruling", "citation": "Rev. Rul. 84-52", "label": "GP-to-LP conversion; unitary basis", "tier": 4, "sub": null, "syn": "Conversion of a general to a limited partnership is not a taxable exchange; a partner has one unitary basis.", "tags": ["84-52", "conversion", "unitary basis"], "vf": null, "vt": null}, {"id": "rr99_5", "ntype": "ruling", "citation": "Rev. Rul. 99-5", "label": "Single-member LLC to partnership", "tier": 4, "sub": null, "syn": "Converting a disregarded single-member LLC to a partnership: treated as a sale/contribution with basis consequences.", "tags": ["99-5", "conversion", "disregarded entity"], "vf": null, "vt": null}, {"id": "rr99_6", "ntype": "ruling", "citation": "Rev. Rul. 99-6", "label": "Partnership to disregarded entity", "tier": 4, "sub": null, "syn": "Converting a partnership to a disregarded entity: deemed liquidating distribution then asset purchase.", "tags": ["99-6", "conversion", "liquidation"], "vf": null, "vt": null}, {"id": "rp93_27", "ntype": "ruling", "citation": "Rev. Proc. 93-27", "label": "Profits interest for services", "tier": 4, "sub": null, "syn": "Receipt of a partnership profits interest for services is generally not a taxable event.", "tags": ["93-27", "profits interest", "services"], "vf": null, "vt": null}, {"id": "rp2001_43", "ntype": "ruling", "citation": "Rev. Proc. 2001-43", "label": "Nonvested profits interest", "tier": 4, "sub": null, "syn": "Clarifies profits-interest treatment for substantially nonvested interests.", "tags": ["2001-43", "profits interest", "vesting"], "vf": null, "vt": null}, {"id": "c_culbertson", "ntype": "case", "citation": "Culbertson", "label": "Partnership existence = intent", "tier": 4, "sub": null, "syn": "Whether a partnership exists turns on the parties' good-faith intent to join together to carry on a business.", "tags": ["Culbertson", "partnership", "intent"], "vf": null, "vt": null}, {"id": "c_luna", "ntype": "case", "citation": "Luna v. Commissioner", "label": "Multi-factor partnership test", "tier": 4, "sub": null, "syn": "Lists factors (agreement, control over income/capital, shared responsibilities, conduct) for whether a partnership exists.", "tags": ["Luna", "partnership", "factors"], "vf": null, "vt": null}, {"id": "c_canal", "ntype": "case", "citation": "Canal Corp. v. Commissioner", "label": "Debt-financed distribution recast", "tier": 4, "sub": null, "syn": "A leveraged distribution was recast as a disguised sale where the partner's indemnity lacked economic substance.", "tags": ["Canal", "disguised sale", "debt-financed", "indemnity"], "vf": null, "vt": null}, {"id": "c_tufts", "ntype": "case", "citation": "Commissioner v. Tufts", "label": "Nonrecourse debt in amount realized", "tier": 4, "sub": null, "syn": "Nonrecourse liability is included in amount realized even if it exceeds the property's value (Crane/Tufts line).", "tags": ["Tufts", "Crane", "nonrecourse", "amount realized"], "vf": null, "vt": null}, {"id": "c_azimzadeh", "ntype": "case", "citation": "Azimzadeh v. Commissioner", "label": "Records & partnership existence", "tier": 4, "sub": null, "syn": "Inadequate records shift the burden to the taxpayer; an unsubstantiated partnership was treated as a sole proprietorship.", "tags": ["Azimzadeh", "records", "burden", "partnership"], "vf": null, "vt": null}, {"id": "s751c", "ntype": "provision", "citation": "IRC 751(c)", "label": "Unrealized receivables", "tier": 1, "sub": null, "syn": "Rights to payment for goods/services not yet in income; an ordinary-income hot asset under \u00a7751.", "tags": ["751(c)", "unrealized receivables", "ordinary"], "vf": null, "vt": null}, {"id": "s751d", "ntype": "provision", "citation": "IRC 751(d)", "label": "Inventory items", "tier": 1, "sub": null, "syn": "Property held for sale plus other non-capital/non-1231 assets; a hot asset under \u00a7751.", "tags": ["751(d)", "inventory", "ordinary"], "vf": null, "vt": null}, {"id": "s736a", "ntype": "provision", "citation": "IRC 736(a)", "label": "Retiring partner: other payments", "tier": 1, "sub": null, "syn": "Payments not for partnership property are a distributive share or a guaranteed payment (ordinary).", "tags": ["736(a)", "guaranteed payment", "goodwill"], "vf": null, "vt": null}, {"id": "s736b", "ntype": "provision", "citation": "IRC 736(b)", "label": "Retiring partner: property payments", "tier": 1, "sub": null, "syn": "Payments for the partner's share of partnership property are liquidating distributions under \u00a7731 (capital, except \u00a7751(b)).", "tags": ["736(b)", "property", "liquidation"], "vf": null, "vt": null}, {"id": "s732a1", "ntype": "provision", "citation": "IRC 732(a)(1)", "label": "Distributed-property basis: carryover", "tier": 1, "sub": null, "syn": "In a current distribution, distributed property takes the partnership's basis (carryover).", "tags": ["732(a)(1)", "carryover"], "vf": null, "vt": null}, {"id": "s732a2", "ntype": "provision", "citation": "IRC 732(a)(2)", "label": "Distributed-property basis: cap", "tier": 1, "sub": null, "syn": "Distributed-property basis cannot exceed outside basis less money distributed in the same distribution.", "tags": ["732(a)(2)", "cap", "outside basis"], "vf": null, "vt": null}, {"id": "s732b", "ntype": "provision", "citation": "IRC 732(b)", "label": "Distributed-property basis: liquidation", "tier": 1, "sub": null, "syn": "In liquidation, distributed property takes the partner's remaining outside basis (after money).", "tags": ["732(b)", "liquidation", "substituted basis"], "vf": null, "vt": null}, {"id": "s704c1B", "ntype": "provision", "citation": "IRC 704(c)(1)(B)", "label": "Seven-year mixing-bowl (distribution)", "tier": 1, "sub": null, "syn": "Distributing contributed 704(c) property to another partner within 7 years triggers the contributor's built-in gain or loss.", "tags": ["704(c)(1)(B)", "seven-year", "mixing bowl"], "vf": null, "vt": null}, {"id": "s721c", "ntype": "provision", "citation": "IRC 721(c)", "label": "Foreign-partner built-in gain", "tier": 1, "sub": null, "syn": "Nonrecognition can be overridden where built-in-gain property is contributed to a partnership with related foreign partners (Treas. Reg. 1.721(c)).", "tags": ["721(c)", "foreign partner", "built-in gain"], "vf": null, "vt": null}, {"id": "s707a", "ntype": "provision", "citation": "IRC 707(a)", "label": "Partner not acting as a partner", "tier": 1, "sub": null, "syn": "Transactions where a partner deals with the partnership as a non-partner; the statutory anchor for disguised sales.", "tags": ["707(a)", "disguised sale", "non-partner"], "vf": null, "vt": null}, {"id": "s707b", "ntype": "provision", "citation": "IRC 707(b)", "label": "Related-party loss/character rules", "tier": 1, "sub": null, "syn": "Disallows losses and recharacterizes gain on sales between a partner and a controlled partnership.", "tags": ["707(b)", "related party", "loss disallowance"], "vf": null, "vt": null}, {"id": "r1752_3_t1", "ntype": "regulation", "citation": "Treas. Reg. 1.752-3(a)(1)", "label": "Nonrecourse tier 1: minimum gain", "tier": 3, "sub": null, "syn": "First tier of nonrecourse allocation: a partner's share of partnership minimum gain.", "tags": ["1.752-3", "tier 1", "minimum gain"], "vf": null, "vt": null}, {"id": "r1752_3_t2", "ntype": "regulation", "citation": "Treas. Reg. 1.752-3(a)(2)", "label": "Nonrecourse tier 2: 704(c) gain", "tier": 3, "sub": null, "syn": "Second tier: the 704(c) built-in gain the partner would be allocated on a deemed sale.", "tags": ["1.752-3", "tier 2", "704(c) gain"], "vf": null, "vt": null}, {"id": "r1752_3_t3", "ntype": "regulation", "citation": "Treas. Reg. 1.752-3(a)(3)", "label": "Nonrecourse tier 3: profits", "tier": 3, "sub": null, "syn": "Third tier: remaining nonrecourse liabilities by the partner's share of profits.", "tags": ["1.752-3", "tier 3", "profits"], "vf": null, "vt": null}, {"id": "r1704_3b", "ntype": "regulation", "citation": "Treas. Reg. 1.704-3(b)", "label": "704(c) traditional method", "tier": 3, "sub": null, "syn": "Traditional method; limited by the ceiling rule (tax items capped at actual partnership items).", "tags": ["1.704-3(b)", "traditional", "ceiling rule"], "vf": null, "vt": null}, {"id": "r1704_3c", "ntype": "regulation", "citation": "Treas. Reg. 1.704-3(c)", "label": "704(c) curative method", "tier": 3, "sub": null, "syn": "Traditional method with curative allocations of other actual items to cure ceiling-rule distortions.", "tags": ["1.704-3(c)", "curative"], "vf": null, "vt": null}, {"id": "r1704_3d", "ntype": "regulation", "citation": "Treas. Reg. 1.704-3(d)", "label": "704(c) remedial method", "tier": 3, "sub": null, "syn": "Remedial method; creates offsetting notional items to fully cure ceiling-rule distortions.", "tags": ["1.704-3(d)", "remedial", "notional"], "vf": null, "vt": null}, {"id": "r1707_4_gp", "ntype": "regulation", "citation": "Treas. Reg. 1.707-4(a)", "label": "Disguised-sale exception: guaranteed payment", "tier": 3, "sub": null, "syn": "Reasonable guaranteed payments for capital are generally not part of a disguised sale.", "tags": ["1.707-4", "guaranteed payment", "exception"], "vf": null, "vt": null}, {"id": "r1707_4_pref", "ntype": "regulation", "citation": "Treas. Reg. 1.707-4(a)", "label": "Disguised-sale exception: preferred return", "tier": 3, "sub": null, "syn": "Reasonable preferred returns are presumed not part of a disguised sale (with a rate safe harbor).", "tags": ["1.707-4", "preferred return", "exception"], "vf": null, "vt": null}, {"id": "r1707_4_ocf", "ntype": "regulation", "citation": "Treas. Reg. 1.707-4(a)", "label": "Disguised-sale exception: operating cash flow", "tier": 3, "sub": null, "syn": "Operating cash flow distributions within limits are presumed not part of a disguised sale.", "tags": ["1.707-4", "operating cash flow", "exception"], "vf": null, "vt": null}, {"id": "r1707_4_pre", "ntype": "regulation", "citation": "Treas. Reg. 1.707-4(b)", "label": "Disguised-sale exception: preformation", "tier": 3, "sub": null, "syn": "Reimbursement of certain preformation capital expenditures is not part of a disguised sale.", "tags": ["1.707-4(b)", "preformation", "reimbursement"], "vf": null, "vt": null}, {"id": "obbba", "ntype": "provision", "citation": "P.L. 119-21 (OBBBA)", "label": "One Big Beautiful Bill Act", "tier": 1, "sub": null, "syn": "[VERIFIED] Signed July 4, 2025. Made 199A permanent, restored EBITDA-based 163(j), and enacted new 1062.", "tags": ["OBBBA", "P.L. 119-21", "2025 tax act", "permanent"], "vf": "2025-07-04", "vt": null}, {"id": "s1062", "ntype": "provision", "citation": "IRC 1062", "label": "Qualified farmland installment election", "tier": 1, "sub": null, "syn": "[VERIFIED] OBBBA election to pay the net income tax on gain from a sale of qualified farmland to a qualified farmer in 4 equal annual installments (a payment-deferral mechanism, NOT a gain exclusion); IRS implemented via Form 1062 (Dec. 2025). Effective for sales in tax years beginning after July 4, 2025.", "tags": ["1062", "farmland", "installment", "Form 1062", "payment deferral"], "vf": "2025-07-04", "vt": null}, {"id": "n2026_03", "ntype": "ruling", "citation": "Notice 2026-3", "label": "Sec. 1062 farmland election \u2014 estimated-tax relief", "tier": 4, "sub": null, "syn": "[REPORTED] Estimated-tax relief tied to the \u00a71062 farmland installment election: a taxpayer may exclude 75% of the applicable net tax liability from required annual estimated payments (\u00a7\u00a76654/6655); penalty relief is automatic for compliant returns or via Form 843 annotated 'Abatement requested pursuant to Notice 2026-3'. Reported via practitioner sources; primary IRB cite to confirm.", "tags": ["2026-3", "1062", "estimated tax", "6654", "6655", "farmland", "Form 843"], "vf": "2026-01-01", "vt": null}, {"id": "n2025_28", "ntype": "ruling", "citation": "Notice 2025-28", "label": "CAMT-partnership interim guidance", "tier": 4, "sub": null, "syn": "[VERIFIED] Issued July 29, 2025 (IRB 2025-34, 316; Aug 18, 2025); partially withdraws the 2024 CAMT proposed regs for partnerships and gives corporate partners simplified AFSI methods. Confirmed still operative by Notice 2026-7.", "tags": ["2025-28", "CAMT", "AFSI", "partnership", "56A"], "vf": "2025-07-29", "vt": null}, {"id": "n2025_28_td", "ntype": "ruling", "citation": "Notice 2025-28 (top-down election)", "label": "CAMT top-down election", "tier": 4, "sub": null, "syn": "[VERIFIED] Lets a corporate partner treat 80% of its own financial-statement income as its distributive share of AFSI, avoiding bottom-up math.", "tags": ["top-down", "80%", "CAMT", "distributive share"], "vf": "2025-07-29", "vt": null}, {"id": "n2025_28_ti", "ntype": "ruling", "citation": "Notice 2025-28 (taxable-income election)", "label": "CAMT taxable-income election", "tier": 4, "sub": null, "syn": "[VERIFIED] A simplified path mapping AFSI to regular taxable income for partners with a small interest.", "tags": ["taxable-income election", "small interest", "CAMT", "minority partner"], "vf": "2025-07-29", "vt": null}, {"id": "n2025_28_fk", "ntype": "ruling", "citation": "Notice 2025-28 (full Subchapter K method)", "label": "CAMT full Subchapter K method", "tier": 4, "sub": null, "syn": "[VERIFIED] Aligns the CAMT treatment of partnership contributions and distributions with regular Subchapter K rules.", "tags": ["full subchapter K", "contributions", "distributions", "CAMT"], "vf": "2025-07-29", "vt": null}, {"id": "n2025_27", "ntype": "ruling", "citation": "Notice 2025-27", "label": "CAMT applicable-corporation interim guidance", "tier": 4, "sub": null, "syn": "[VERIFIED] CAMT interim guidance, IRB 2025-26 (June 23, 2025); part of the stacked interim-notice regime for the corporate AMT (\u00a756A) pending proposed/final regulations. Specific operative content to confirm against the notice.", "tags": ["2025-27", "CAMT", "56A", "applicable corporation", "interim"], "vf": "2025-06-23", "vt": null}, {"id": "n2025_46", "ntype": "ruling", "citation": "Notice 2025-46", "label": "CAMT additional interim guidance", "tier": 4, "sub": null, "syn": "[VERIFIED] CAMT interim guidance, IRB 2025-43 (Oct 20, 2025); continues the stacked interim-notice regime for the corporate AMT (\u00a756A). Later modified by Notice 2026-7.", "tags": ["2025-46", "CAMT", "56A", "interim"], "vf": "2025-10-20", "vt": null}, {"id": "n2025_49", "ntype": "ruling", "citation": "Notice 2025-49", "label": "CAMT additional interim guidance", "tier": 4, "sub": null, "syn": "[VERIFIED] CAMT interim guidance (irs.gov drop n-25-49), issued late 2025 after Notice 2025-46; reiterates that a corporate partner takes into account only its distributive share of partnership AFSI under \u00a756A(c)(2)(D)(i), and that Treasury intends to partially withdraw the Sept 2024 CAMT proposed regs and reissue. Exact IRB cite/date to confirm. Later modified by Notice 2026-7.", "tags": ["2025-49", "CAMT", "56A", "distributive share", "AFSI", "partnership"], "vf": "2025-11-01", "vt": null}, {"id": "n2026_07", "ntype": "ruling", "citation": "Notice 2026-7", "label": "CAMT additional interim guidance", "tier": 4, "sub": null, "syn": "[VERIFIED] Additional CAMT interim guidance (irs.gov drop n-26-07), Part III of the IRB; MODIFIES (does not withdraw) Notices 2025-46 and 2025-49, transition/applicability Feb 18, 2026. Confirms Notice 2025-28 remains operative and that NO final CAMT regulations exist as of early 2026.", "tags": ["2026-7", "CAMT", "56A", "interim"], "vf": "2026-02-18", "vt": null}, {"id": "camt_propreg", "ntype": "regulation", "citation": "Prop. Treas. Reg. 1.56A (REG-112129-23)", "label": "CAMT proposed regs \u2014 partnership AFSI", "tier": 3, "sub": null, "syn": "[VERIFIED] CAMT proposed regulations, 89 FR 75062 (Sept 13, 2024), RIN 1545-BQ84. Contains Subchapter-K-specific Prop. \u00a71.56A-5 (a partner's distributive share of partnership AFSI; bottom-up / applicable method) and Prop. \u00a71.56A-20 (applying Part II Subchapter K principles via a deferred-sale method for \u00a7721(a) contributions). PROPOSED, not final; Treasury intends to partially withdraw and reissue. The interim notices govern in the meantime.", "tags": ["56A", "CAMT", "proposed reg", "REG-112129-23", "1.56A-5", "1.56A-20", "AFSI", "partnership"], "vf": "2024-09-13", "vt": null}, {"id": "form7217", "ntype": "ruling", "citation": "Form 7217", "label": "Partner property-distribution report", "tier": 5, "sub": null, "syn": "[VERIFIED] TY2024+; any partner receiving a \u00a7732 property distribution files a separate Form 7217 per distribution date (money and marketable-securities-as-money excluded).", "tags": ["7217", "property distribution", "732", "reporting"], "vf": "2024-01-01", "vt": null}, {"id": "rr2024_14", "ntype": "ruling", "citation": "Rev. Rul. 2024-14", "label": "Basis-shifting economic substance", "tier": 4, "sub": null, "syn": "[VERIFIED-superseded] Applied the \u00a77701(o) economic substance doctrine to related-party basis-shifting via \u00a7\u00a7732(b)/734(b)/743(b); REVOKED in 2025 by Notice 2025-34.", "tags": ["2024-14", "economic substance", "basis shifting", "7701(o)", "revoked"], "vf": "2024-06-17", "vt": null}, {"id": "n2024_54", "ntype": "ruling", "citation": "Notice 2024-54", "label": "Basis-shifting proposed-reg notice", "tier": 4, "sub": null, "syn": "[VERIFIED-superseded] Announced forthcoming basis-shifting regs; withdrawn by Notice 2025-23 and revoked by Notice 2025-34.", "tags": ["2024-54", "basis shifting", "withdrawn"], "vf": "2024-06-17", "vt": null}, {"id": "reg6011_18", "ntype": "regulation", "citation": "Treas. Reg. 1.6011-18", "label": "Basis-shifting transaction of interest", "tier": 3, "sub": null, "syn": "[VERIFIED] Final 1/14/2025 (TD 10028, 90 FR 2972) designating related-party basis-shifting as a reportable transaction of interest. Notice 2025-23 (Apr 2025) announced its removal and waived disclosure penalties, but the section REMAINS CODIFIED in the eCFR (current through 6/12/2026) with no removing Treasury Decision in effect \u2014 still on the books, though effectively unenforced. Corrected June 2026 against the official eCFR after the prior seed wrongly recorded a 3/6/2026 removal.", "tags": ["1.6011-18", "transaction of interest", "TOI", "reportable", "codified", "eCFR"], "vf": "2025-01-14", "vt": null}, {"id": "n2025_23", "ntype": "ruling", "citation": "Notice 2025-23", "label": "Removes basis-shifting TOI reg", "tier": 4, "sub": null, "syn": "[VERIFIED] Issued April 17, 2025; announced removal of Treas. Reg. 1.6011-18, waived disclosure penalties, and withdrew Notice 2024-54.", "tags": ["2025-23", "removal", "penalty relief", "TOI"], "vf": "2025-04-17", "vt": null}, {"id": "n2025_34", "ntype": "ruling", "citation": "Notice 2025-34", "label": "Revokes 2024-14 and 2024-54", "tier": 4, "sub": null, "syn": "[VERIFIED] 2025 notice revoking Rev. Rul. 2024-14 and Notice 2024-54 with penalty relief.", "tags": ["2025-34", "revokes", "2024-14", "2024-54"], "vf": "2025-05-01", "vt": null}, {"id": "s761a_ce", "ntype": "regulation", "citation": "IRC 761(a) / Treas. Reg. 1.761-2", "label": "Clean-energy elect-out of Subch. K", "tier": 3, "sub": null, "syn": "[VERIFIED] Final regs (late 2024) let qualifying unincorporated clean-energy co-ownership arrangements elect out of Subchapter K to ease \u00a76417 direct-pay credit collection.", "tags": ["761(a)", "elect out", "clean energy", "6417", "direct pay"], "vf": "2024-11-01", "vt": null}, {"id": "s6417", "ntype": "provision", "citation": "IRC 6417", "label": "Elective (direct) payment of credits", "tier": 1, "sub": null, "syn": "[VERIFIED] IRA-2022 elective/direct-pay mechanism for certain energy credits; interacts with the \u00a7761(a) clean-energy elect-out.", "tags": ["6417", "direct pay", "elective payment", "energy credit"], "vf": "2023-01-01", "vt": null}, {"id": "dpl_rules", "ntype": "regulation", "citation": "Disregarded Payment Loss (DPL) rules", "label": "Cross-border DPL tracking", "tier": 3, "sub": null, "syn": "[REPORTED] Final 2025 regs on disregarded payment losses tied to the dual-consolidated-loss regime (\u00a71503(d)); a reported sunset via Notice 2025-44 folding DPL into DCL logic is UNCONFIRMED \u2014 verify the notice number.", "tags": ["DPL", "disregarded payment loss", "DCL", "1503(d)", "cross-border"], "vf": "2025-01-01", "vt": null}, {"id": "lpc_ai", "ntype": "ruling", "citation": "Large Partnership Compliance (AI/ML)", "label": "AI-assisted LPC audit selection", "tier": 5, "sub": null, "syn": "[CONTEXT] IRS Large Partnership Compliance program using ML to select large, multi-tiered passthroughs for audit; an enforcement program, not legal authority. A 'Rapid LPC Field Audit' expansion is reported to have stalled on budget/staffing \u2014 UNCONFIRMED.", "tags": ["LPC", "large partnership", "AI audit", "enforcement"], "vf": "2024-01-01", "vt": null}, {"id": "k23_dfe", "ntype": "ruling", "citation": "Schedules K-2/K-3 domestic filing exception", "label": "K-2/K-3 small-partnership relief", "tier": 5, "sub": null, "syn": "[CONTEXT] Domestic filing exception and partner-notification rules let qualifying small/domestic partnerships skip K-2/K-3; specific 2025 threshold and 'Part XII QDD' changes UNCONFIRMED \u2014 verify against current instructions.", "tags": ["K-2", "K-3", "domestic filing exception", "QDD", "Part XII"], "vf": "2024-01-01", "vt": null}], "edges": [{"s": "s722", "d": "t_outside_basis", "t": "computes", "dir": "initialize", "seq": 0, "grp": "increase", "m": "contributed: cash + adjusted basis"}, {"s": "s742", "d": "t_outside_basis", "t": "computes", "dir": "initialize", "seq": 0, "grp": "increase", "m": "purchased: cost + liabilities"}, {"s": "s705a1A", "d": "t_outside_basis", "t": "adjusts", "dir": "increase", "seq": 1, "grp": "increase", "m": "taxable income incl. capital gain"}, {"s": "s705a1B", "d": "t_outside_basis", "t": "adjusts", "dir": "increase", "seq": 2, "grp": "increase", "m": "tax-exempt income"}, {"s": "s705a1C", "d": "t_outside_basis", "t": "adjusts", "dir": "increase", "seq": 3, "grp": "increase", "m": "excess percentage depletion"}, {"s": "s752a", "d": "t_outside_basis", "t": "adjusts", "dir": "increase", "seq": 4, "grp": "increase", "m": "liability increase = deemed contribution"}, {"s": "s733", "d": "t_outside_basis", "t": "adjusts", "dir": "decrease", "seq": 5, "grp": "distribution", "m": "distributions: money + property basis"}, {"s": "s752b", "d": "t_outside_basis", "t": "adjusts", "dir": "decrease", "seq": 6, "grp": "distribution", "m": "liability decrease = deemed distribution"}, {"s": "s705a2B", "d": "t_outside_basis", "t": "adjusts", "dir": "decrease", "seq": 7, "grp": "reduce", "m": "nondeductible noncapital expense"}, {"s": "s705a3", "d": "t_outside_basis", "t": "adjusts", "dir": "decrease", "seq": 8, "grp": "reduce", "m": "oil & gas depletion"}, {"s": "s705a2A", "d": "t_outside_basis", "t": "adjusts", "dir": "decrease", "seq": 9, "grp": "loss_limited", "m": "distributive share of loss"}, {"s": "s704d", "d": "t_outside_basis", "t": "uses", "dir": "constraint", "seq": null, "grp": "loss_limited", "m": "loss allowed only to extent of basis"}, {"s": "s705b", "d": "t_outside_basis", "t": "uses", "dir": "constraint", "seq": null, "grp": null, "m": "alternative proportionate computation"}, {"s": "t_outside_basis", "d": "s731a1", "t": "overflow", "dir": null, "seq": null, "grp": null, "m": "distribution > basis => \u00a7731(a) gain"}, {"s": "t_outside_basis", "d": "s704d", "t": "overflow", "dir": null, "seq": null, "grp": null, "m": "loss > basis => \u00a7704(d) suspended"}, {"s": "s723", "d": "t_inside_basis", "t": "computes", "dir": "initialize", "seq": 0, "grp": null, "m": "carryover from contribution"}, {"s": "s743b", "d": "t_inside_basis", "t": "adjusts", "dir": null, "seq": null, "grp": null, "m": "transferee step-up/down on sale of interest"}, {"s": "s734b", "d": "t_inside_basis", "t": "adjusts", "dir": null, "seq": null, "grp": null, "m": "adjustment on distribution"}, {"s": "s743b", "d": "s754", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "requires \u00a7754 election (or substantial built-in loss)"}, {"s": "s734b", "d": "s754", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "requires \u00a7754 election (or substantial basis reduction)"}, {"s": "s755", "d": "t_inside_basis", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "allocates the adjustment among assets"}, {"s": "r1704_1", "d": "t_capital_account", "t": "computes", "dir": "initialize", "seq": null, "grp": null, "m": "maintenance rules 1.704-1(b)(2)(iv)"}, {"s": "s704b", "d": "t_capital_account", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "SEE safe harbor keyed to capital accounts"}, {"s": "s751", "d": "t_hot_assets", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1752_1", "d": "t_partnership_liability", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "s704c", "d": "t_built_in_gain", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "s754", "d": "t_754_election", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "s731c", "d": "t_marketable_securities", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1707_5", "d": "t_qualified_liability", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1707_3", "d": "t_disguised_sale", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1704_1", "d": "s704b", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1704_2", "d": "s704b", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1704_3", "d": "s704c", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1707_3", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1707_4", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1707_5", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1752_1", "d": "s752", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1752_2", "d": "s752", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1752_3", "d": "s752", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1751_1", "d": "s751", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1731_2", "d": "s731c", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1736_1", "d": "s736", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "r1709_2", "d": "s709", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "regulation implements statute"}, {"s": "s722", "d": "s723", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s731", "d": "s732", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s732", "d": "s733", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s731", "d": "s733", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s741", "d": "s751", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s736", "d": "s751b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s736", "d": "s731", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s731c", "d": "s751", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s704c", "d": "s737", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s721", "d": "s721b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s721b", "d": "s351e", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s721b", "d": "s721", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s754", "d": "s743b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s754", "d": "s734b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s707", "d": "s707c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s707", "d": "s752", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s751", "d": "s751b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s731a1", "d": "s731", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s731a2", "d": "s731", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s752a", "d": "s752", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s752b", "d": "s752", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s704d3", "d": "s704d", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s742", "d": "s1012", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related provision"}, {"s": "s752a", "d": "t_partnership_liability", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "share of liabilities"}, {"s": "s752b", "d": "t_partnership_liability", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "share of liabilities"}, {"s": "c_culbertson", "d": "t_partnership_status", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "c_luna", "d": "t_partnership_status", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "c_azimzadeh", "d": "t_partnership_status", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "c_canal", "d": "t_disguised_sale", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "c_tufts", "d": "t_partnership_liability", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "rr84_52", "d": "t_outside_basis", "t": "informs", "dir": null, "seq": null, "grp": null, "m": "unitary basis"}, {"s": "rr99_5", "d": "s722", "t": "informs", "dir": null, "seq": null, "grp": null, "m": "DRE -> partnership conversion"}, {"s": "rr99_6", "d": "s731", "t": "informs", "dir": null, "seq": null, "grp": null, "m": "partnership -> DRE conversion"}, {"s": "rp93_27", "d": "s721", "t": "informs", "dir": null, "seq": null, "grp": null, "m": "profits interest not taxable"}, {"s": "rp2001_43", "d": "s721", "t": "informs", "dir": null, "seq": null, "grp": null, "m": "nonvested profits interest"}, {"s": "s751c", "d": "t_hot_assets", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "s751d", "d": "t_hot_assets", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "s751", "d": "s751c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "defined term"}, {"s": "s751", "d": "s751d", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "defined term"}, {"s": "s724", "d": "s751c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "character borrows 751(c)"}, {"s": "s724", "d": "s751d", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "character borrows 751(d)"}, {"s": "s736", "d": "s736a", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "payment split"}, {"s": "s736", "d": "s736b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "payment split"}, {"s": "s736b", "d": "s751b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "hot assets in property payment"}, {"s": "s736b", "d": "s731", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "distribution rules"}, {"s": "s736a", "d": "s707c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "guaranteed-payment character"}, {"s": "s732", "d": "s732a1", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "current-distribution basis"}, {"s": "s732", "d": "s732a2", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "basis cap"}, {"s": "s732", "d": "s732b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "liquidation basis"}, {"s": "s732a2", "d": "t_outside_basis", "t": "uses", "dir": "constraint", "seq": null, "grp": null, "m": "cap at outside basis"}, {"s": "s704c1B", "d": "s737", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "mixing-bowl pair"}, {"s": "s704c1B", "d": "s704c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "704(c) anti-abuse"}, {"s": "s721c", "d": "s721b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "contribution exception"}, {"s": "s721c", "d": "s704c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "remedial-method condition"}, {"s": "s707a", "d": "t_disguised_sale", "t": "defines", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "s707", "d": "s707a", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "statutory hook"}, {"s": "s707", "d": "s707b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "related-party rules"}, {"s": "r1752_3_t1", "d": "s752", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "nonrecourse tier 1"}, {"s": "r1752_3_t2", "d": "s752", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "nonrecourse tier 2"}, {"s": "r1752_3_t3", "d": "s752", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "nonrecourse tier 3"}, {"s": "r1752_3_t1", "d": "t_partnership_liability", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1752_3_t2", "d": "t_partnership_liability", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1752_3_t3", "d": "t_partnership_liability", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1752_3_t2", "d": "t_built_in_gain", "t": "uses", "dir": null, "seq": null, "grp": null, "m": "704(c) gain feeds tier 2"}, {"s": "r1704_3b", "d": "s704c", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "traditional method"}, {"s": "r1704_3c", "d": "s704c", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "curative method"}, {"s": "r1704_3d", "d": "s704c", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "remedial method"}, {"s": "r1704_3b", "d": "t_built_in_gain", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1704_3c", "d": "t_built_in_gain", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1704_3d", "d": "t_built_in_gain", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1707_4_gp", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "disguised-sale exception"}, {"s": "r1707_4_pref", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "disguised-sale exception"}, {"s": "r1707_4_ocf", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "disguised-sale exception"}, {"s": "r1707_4_pre", "d": "s707", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "disguised-sale exception"}, {"s": "r1707_4_gp", "d": "t_disguised_sale", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1707_4_pref", "d": "t_disguised_sale", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1707_4_ocf", "d": "t_disguised_sale", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "r1707_4_pre", "d": "t_disguised_sale", "t": "uses", "dir": null, "seq": null, "grp": null, "m": ""}, {"s": "obbba", "d": "s199A", "t": "amends", "dir": null, "seq": null, "grp": null, "m": "made 199A permanent (no 2025 sunset)"}, {"s": "obbba", "d": "s163j", "t": "amends", "dir": null, "seq": null, "grp": null, "m": "restored EBITDA-based ATI"}, {"s": "obbba", "d": "s1062", "t": "enacts", "dir": null, "seq": null, "grp": null, "m": "created 1062"}, {"s": "n2025_28", "d": "n2025_28_td", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "method of the notice"}, {"s": "n2025_28", "d": "n2025_28_ti", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "method of the notice"}, {"s": "n2025_28", "d": "n2025_28_fk", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "method of the notice"}, {"s": "n2025_28_fk", "d": "s721", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "aligns contributions with Subch. K"}, {"s": "n2025_28", "d": "s704b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "distributive-share AFSI"}, {"s": "n2025_27", "d": "n2025_28", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "earlier CAMT interim notice"}, {"s": "n2025_46", "d": "n2025_28", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "continues the interim-notice stack"}, {"s": "n2025_49", "d": "n2025_46", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "continues the interim-notice stack"}, {"s": "n2026_07", "d": "n2025_49", "t": "amends", "dir": null, "seq": null, "grp": null, "m": "modifies (does not withdraw)"}, {"s": "n2026_07", "d": "n2025_46", "t": "amends", "dir": null, "seq": null, "grp": null, "m": "modifies (does not withdraw)"}, {"s": "n2026_07", "d": "n2025_28", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "confirms 2025-28 remains operative"}, {"s": "n2025_28", "d": "camt_propreg", "t": "amends", "dir": null, "seq": null, "grp": null, "m": "partially withdraws the 2024 CAMT proposed regs for partnerships"}, {"s": "n2025_49", "d": "camt_propreg", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "Treasury intends partial withdrawal/reissue"}, {"s": "camt_propreg", "d": "s721", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "Prop. 1.56A-20 deferred-sale method for 721(a) contributions"}, {"s": "camt_propreg", "d": "s704b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "Prop. 1.56A-5 partner distributive share of AFSI"}, {"s": "n2026_03", "d": "s1062", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "estimated-tax relief for the 1062 farmland election"}, {"s": "form7217", "d": "s732", "t": "implements", "dir": null, "seq": null, "grp": null, "m": "reports \u00a7732 distributed-property basis"}, {"s": "form7217", "d": "s731c", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "marketable-securities-as-money excluded"}, {"s": "rr2024_14", "d": "s743b", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": "economic substance on basis adjustment"}, {"s": "rr2024_14", "d": "s734b", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": "economic substance on basis adjustment"}, {"s": "reg6011_18", "d": "s743b", "t": "interprets", "dir": null, "seq": null, "grp": null, "m": "designated basis-shifting reportable"}, {"s": "n2025_23", "d": "reg6011_18", "t": "informs", "dir": null, "seq": null, "grp": null, "m": "announced removal & waived disclosure penalties; section still codified per eCFR 6/12/2026"}, {"s": "n2025_23", "d": "n2024_54", "t": "supersedes", "dir": null, "seq": null, "grp": null, "m": "withdraws the notice"}, {"s": "n2025_34", "d": "rr2024_14", "t": "supersedes", "dir": null, "seq": null, "grp": null, "m": "revokes the ruling"}, {"s": "n2025_34", "d": "n2024_54", "t": "supersedes", "dir": null, "seq": null, "grp": null, "m": "revokes the notice"}, {"s": "s761a_ce", "d": "s6417", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "elect-out eases direct pay"}, {"s": "s761a_ce", "d": "s721", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "elect-out of Subchapter K"}, {"s": "dpl_rules", "d": "s704b", "t": "cross_references", "dir": null, "seq": null, "grp": null, "m": "passthrough cross-border losses"}]};</script>
+<script>
+"use strict";
+const G = SubK.buildGraph(DATA);
+const $ = s => document.querySelector(s);
+
+const TIER = {1:{name:"Statute",cls:"statute"},3:{name:"Regulation",cls:"reg"},
+              4:{name:"Ruling / Notice",cls:"rule"},5:{name:"Form / Program",cls:"form"}};
+const TAGRE = /^\[([^\]]+)\]\s*/;
+function splitTag(syn){
+  const m = (syn||"").match(TAGRE);
+  if(!m) return {tag:null,text:syn||""};
+  const t = m[1].toLowerCase();
+  let cls = t.includes("superseded")?"sup": t.startsWith("verified")?"ok": t==="reported"?"rep":"ctx";
+  return {tag:m[1],cls,text:syn.replace(TAGRE,"")};
+}
+function esc(s){return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function fmt(n){return n.toLocaleString("en-US",{maximumFractionDigits:0});}
+
+/* ---------- stats ---------- */
+const dangling = G.edges.filter(e=>!G.byId[e.s]||!G.byId[e.d]).length;
+$("#stats").innerHTML = [
+  [G.nodes.length,"nodes"],[G.edges.length,"typed edges"],[dangling,"dangling"],
+  [G.nodes.filter(n=>n.ntype==="term").length,"defined terms"]
+].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
+
+/* ---------- as-of date ---------- */
+const today = new Date().toISOString().slice(0,10);
+const asof = $("#asof"); asof.value = today;
+let lastQ = "";
+asof.addEventListener("change", ()=>{ if(lastQ) runAsk(lastQ); renderCurrency(); });
+
+/* ---------- ASK ---------- */
+const EXAMPLES = [
+  "what feeds a partner's outside basis",
+  "disguised sale of contributed property with a liability",
+  "ordinary income when selling a partnership interest",
+  "CAMT corporate alternative minimum tax partnership election",
+  "nonrecourse liability allocation three tier",
+  "section 754 election inside basis step up"
+];
+$("#chips").innerHTML = EXAMPLES.map(e=>`<button class="chip">${esc(e)}</button>`).join("");
+$("#chips").addEventListener("click",e=>{ if(e.target.classList.contains("chip")){ $("#q").value=e.target.textContent; runAsk(e.target.textContent);} });
+$("#qbtn").addEventListener("click",()=>runAsk($("#q").value));
+$("#q").addEventListener("keydown",e=>{ if(e.key==="Enter") runAsk($("#q").value); });
+
+function dirClass(d){ return d==="decrease"?"dir-dn": d==="constraint"?"dir-lim":"dir-up"; }
+function dirLabel(d){ return d==="decrease"?"− down": d==="constraint"?"limit": d==="initialize"?"+ init":"+ up"; }
+function dagBlock(hub,d){
+  return `<div class="dag"><div class="title">Computed term · ${esc(hub.label||hub.citation)} — ordered input DAG</div>` +
+    d.rows.map(row=>`<div class="drow">
+        <div class="dseq">${row.seq===99?"·":row.seq}</div>
+        <div class="ddir ${dirClass(row.dir)}">${dirLabel(row.dir)}</div>
+        <div class="dcite">${esc(row.cite)}</div>
+        <div class="dmech">${esc(row.m)}</div></div>`).join("") +
+    (d.overflow.length?`<div class="floor"><b>floor 0</b> · overflow → ${d.overflow.map(esc).join(" · ")}</div>`:"") +
+    `</div>`;
+}
+
+function runAsk(q){
+  q=(q||"").trim(); if(!q){ $("#askout").innerHTML=""; lastQ=""; return; }
+  lastQ=q;
+  const r = SubK.retrieve(G, q, asof.value || null);
+
+  // build DAG blocks for seed computed-hubs; suppress members from flat list
+  const seedSet = new Set(r.seeds), suppressed = new Set(); let dagHTML = "";
+  r.computedHubs.forEach(hub=>{
+    if(!seedSet.has(hub.id)) return;
+    const d = SubK.dag(G, hub.id); if(!d.rows.length) return;
+    d.members.forEach(m=>suppressed.add(m));
+    dagHTML += dagBlock(hub, d);
+  });
+
+  // flat authority neighborhood grouped by tier
+  let body = "", cur = null;
+  r.results.forEach(([n])=>{
+    if(suppressed.has(n.id)) return;
+    if(n.tier!==cur){ cur=n.tier; const t=TIER[cur]||{name:"tier "+cur,cls:"form"};
+      body += `<div class="tierhdr">${t.name}</div>`; }
+    const t = TIER[n.tier]||{cls:"form"}; const sp = splitTag(n.syn);
+    body += `<div class="auth"><i class="dot bg-${t.cls}"></i>
+        <div class="c"><span class="cite t-${t.cls}">${esc(n.citation)}</span></div>
+        <div class="s">${sp.tag?`<span class="pill ${sp.cls}">${esc(sp.tag)}</span> `:""}${esc(sp.text)}</div></div>`;
+  });
+
+  const compute = r.isComputation ? `<div class="callout">
+      <div class="txt"><b>Computation detected</b><span>This needs a number. The graph routes it to the deterministic engine instead of guessing.</span></div>
+      <button class="btn" onclick="document.getElementById('compute').scrollIntoView()">Open the basis engine</button></div>` : "";
+
+  const excl = r.excluded.length ? `<div class="excl"><div class="h">Excluded — not in force as of ${esc(asof.value)}</div>` +
+      r.excluded.map(([c,vf,vt])=>`<div class="e">${esc(c)} <span style="color:var(--soft)">· window ${vf||"—"} → ${vt||"—"}</span></div>`).join("") + `</div>` : "";
+
+  $("#askout").innerHTML = `<div class="card fade"><div class="pad">
+      <p class="sub">Authority neighborhood · by tier</p>${body||"<em>No matching authority. Try another phrasing.</em>"}
+      ${dagHTML}${compute}${excl}
+      <p class="meta" style="margin-top:18px">Assembled from graph seed — cite only primary authority after review.</p>
+    </div></div>`;
+}
+
+/* ---------- CALCULATOR ---------- */
+const FIELDS = [
+  ["Contributions & liabilities in", [
+    ["cash_contributed","Cash contributed"],["property_contributed_basis","Property — adjusted basis"],
+    ["liability_increase","Liability increase  §752(a)"]]],
+  ["Distributive share", [
+    ["income_taxable","Taxable income"],["income_tax_exempt","Tax-exempt income"],
+    ["depletion_excess","Excess depletion"]]],
+  ["Distributions & liabilities out", [
+    ["cash_distributed","Cash distributed"],["property_distributed_basis","Property — basis distributed"],
+    ["liability_decrease","Liability decrease  §752(b)"]]],
+  ["Reductions & loss", [
+    ["nondeductible","Nondeductible expense"],["oil_gas_depletion","Oil & gas depletion"],
+    ["losses","Distributive share of loss"]]]
+];
+const EX = {
+  sink:{label:"Full waterfall", note:"Every component in play — contributions, a liability share, income, an over-distribution, nondeductibles, and a loss. Ordering decides it: the over-distribution recognizes §731(a) gain and floors basis at zero, so the $8k of nondeductibles and the entire $50k loss are lost. Result: $15k gain, $50k suspended.",
+        vals:{beginning_basis:0,cash_contributed:25000,property_contributed_basis:40000,liability_increase:60000,income_taxable:30000,income_tax_exempt:5000,cash_distributed:120000,property_distributed_basis:20000,liability_decrease:35000,nondeductible:8000,losses:50000}},
+  both:{label:"Gain and suspension together", note:"A $90k distribution against $60k of basis recognizes $30k of §731(a) gain, yet the $25k loss is still fully suspended under §704(d). The two consequences fire independently — tax on gain and no deduction for the loss in the same year.",
+        vals:{beginning_basis:50000,income_taxable:10000,cash_distributed:90000,losses:25000}},
+  ordering:{label:"Ordering trap", note:"Netting the figures suggests the $40k loss is deductible. But the $110k distribution is applied before the loss, stripping basis to $10k first, so only $10k of the loss is allowed and $30k is suspended. Order changes the answer.",
+        vals:{beginning_basis:100000,income_taxable:20000,cash_distributed:110000,losses:40000}},
+  liab:{label:"Phantom gain from liability relief", note:"No cash moves, but the partner's share of liabilities drops $40k. Under §752(b) that is a deemed distribution, and because it exceeds the $25k of basis it triggers $15k of §731(a) gain — a tax bill with nothing received.",
+        vals:{beginning_basis:20000,income_taxable:5000,liability_decrease:40000}},
+  joe:{label:"IRS example — validates", note:"Matches the IRS LB&I worked example (Joe Johnson) exactly: a $465k distribution against $245k of basis yields $220k of §731(a) gain and a zero ending basis. The engine self-checks against this.",
+        vals:{beginning_basis:245000,cash_distributed:465000}}
+};
+function buildForm(vals){
+  vals = vals||{};
+  let h = `<div class="fg"><div class="lbl">Beginning basis</div>
+     <div class="frow"><label>Beginning outside basis</label>
+     <input data-k="beginning_basis" type="number" value="${vals.beginning_basis||0}"></div></div>`;
+  FIELDS.forEach(([g,rows])=>{
+    h += `<div class="fg"><div class="lbl">${g}</div>` + rows.map(([k,l])=>
+      `<div class="frow"><label>${l}</label><input data-k="${k}" type="number" value="${vals[k]||0}"></div>`).join("") + `</div>`;
+  });
+  $("#calcform").innerHTML = h;
+  $("#calcform").querySelectorAll("input").forEach(i=>i.addEventListener("input",()=>{ $("#calcnote").innerHTML=""; runCalc(); }));
+}
+function readForm(){
+  const o={}; $("#calcform").querySelectorAll("input").forEach(i=>o[i.dataset.k]=parseFloat(i.value)||0); return o;
+}
+function runCalc(){
+  const res = SubK.computeBasis(readForm());
+  const tr = res.trace.map(([lbl,delta,run])=>`<div class="tr${lbl[0]==='E'||lbl[0]==='C'?' run':''}">
+      <div>${esc(lbl)}</div><div class="num">${delta<0?"−":""}${fmt(Math.abs(delta))}</div>
+      <div class="num">${fmt(run)}</div></div>`).join("");
+  $("#calcout").innerHTML = `<p class="sub">Step trace</p>
+    <div class="tr" style="color:var(--soft)"><div></div><div class="num">change</div><div class="num">running</div></div>
+    ${tr}
+    <div class="results3">
+      <div class="r3 basis"><b>${fmt(res.ending)}</b><span>Ending basis</span></div>
+      <div class="r3 gain"><b>${fmt(res.gain)}</b><span>§731(a) gain</span></div>
+      <div class="r3 susp"><b>${fmt(res.lossSuspended)}</b><span>§704(d) suspended</span></div>
+    </div>
+    <p class="meta" style="margin-top:14px">Authorities: ${res.authorities.join(" · ")}</p>`;
+}
+function loadExample(key){
+  if(key==="clear"){ $("#calcnote").innerHTML=""; buildForm({}); runCalc(); return; }
+  const e=EX[key]; if(!e) return;
+  $("#calcnote").innerHTML=`<div class="calcnote"><b>${esc(e.label)}</b>${esc(e.note)}</div>`;
+  buildForm(e.vals); runCalc();
+}
+$("#calcchips").innerHTML = Object.entries(EX).map(([k,v])=>`<button class="chip" data-ex="${k}">${esc(v.label)}</button>`).join("")
+  + `<button class="chip" data-ex="clear">Clear</button>`;
+$("#compute").addEventListener("click",e=>{ const ex=e.target.dataset.ex; if(ex) loadExample(ex); });
+loadExample("sink");
+
+/* ---------- CURRENCY ---------- */
+const DATES = [["2016-06-01","2016 · pre-TCJA"],["2020-06-01","2020"],["2024-06-01","2024"],
+               [today,"today"],["2030-06-01","2030"]];
+$("#datechips").innerHTML = DATES.map(([d,l])=>`<button class="chip" data-d="${d}">${l}</button>`).join("");
+$("#datechips").addEventListener("click",e=>{ const d=e.target.dataset.d; if(d){ asof.value=d; if(lastQ) runAsk(lastQ); renderCurrency(); } });
+
+function curCol(title,cls,items,emptyok){
+  const body = items.length ? items.map(([c,w])=>`<div class="item"><span>${esc(c)}</span><span class="why">${esc(w)}</span></div>`).join("")
+    : `<div class="item" style="color:var(--soft)">${emptyok}</div>`;
+  return `<div class="curcol"><h3 class="${cls}"><i class="dot" style="background:currentColor"></i>${title} <span style="color:var(--soft);font-weight:400">· ${items.length}</span></h3>${body}</div>`;
+}
+function renderCurrency(){
+  const r = SubK.currencyReport(G, asof.value || today);
+  $("#curout").innerHTML =
+    curCol("In force","hd-force",r.inForce,"—") +
+    curCol("Not yet effective","hd-not",r.notYet,"nothing pending") +
+    curCol("Removed / expired","hd-rem",r.expired,"none removed") +
+    curCol("Superseded / revoked","hd-sup",r.superseded,"none revoked");
+}
+renderCurrency();
+
+/* ---------- CORPUS ---------- */
+let cfilterType="all", selId=null;
+const ntypeName = {term:"Term",provision:"Statute",regulation:"Regulation",ruling:"Ruling/Notice",case:"Case"};
+function nodeTierCls(n){ return (TIER[n.tier]||{cls:"form"}).cls; }
+function renderList(){
+  const q=$("#cfilter").value.toLowerCase().trim();
+  const rows = G.nodes.filter(n=>{
+    if(cfilterType!=="all" && n.ntype!==cfilterType) return false;
+    if(!q) return true;
+    return (n.citation+" "+n.label+" "+(n.syn||"")+" "+(n.tags||[]).join(" ")).toLowerCase().includes(q);
+  }).sort((a,b)=> a.tier-b.tier || a.citation.localeCompare(b.citation));
+  $("#corpcount").textContent = rows.length+" of "+G.nodes.length+" nodes";
+  $("#nlist").innerHTML = rows.map(n=>`<div class="nrow ${n.id===selId?'sel':''}" data-id="${n.id}">
+      <span class="nc t-${nodeTierCls(n)}">${esc(n.citation)}</span><span class="nl">${esc(n.label)}</span></div>`).join("")
+      || `<div style="padding:18px;color:var(--soft);font-family:var(--serif)">No nodes match.</div>`;
+  if(rows.length && !rows.some(n=>n.id===selId)) selectNode(rows[0].id);
+}
+function relName(t){ return t.replace(/_/g," "); }
+function selectNode(id){
+  selId=id; const n=G.byId[id]; if(!n) return;
+  $("#nlist").querySelectorAll(".nrow").forEach(r=>r.classList.toggle("sel",r.dataset.id===id));
+  const out=[], inb=[];
+  G.adj[id].forEach(e=>{
+    if(e.s===id) out.push(`<div class="edge"><span class="rel">${relName(e.t)}</span> → ${esc(G.byId[e.d]?G.byId[e.d].citation:e.d)}${e.m?` <span style="color:var(--soft)">· ${esc(e.m)}</span>`:""}</div>`);
+    else inb.push(`<div class="edge">${esc(G.byId[e.s]?G.byId[e.s].citation:e.s)} <span class="rel">${relName(e.t)}</span> →</div>`);
+  });
+  const sp = splitTag(n.syn);
+  const win = (n.vf||n.vt) ? `<p class="meta">In force window: ${n.vf||"—"} → ${n.vt||"—"}</p>` : "";
+  $("#ndetail").innerHTML = `<div class="fade">
+    <div class="dc">${esc(n.citation)}</div><div class="dl">${esc(n.label)}</div>
+    <div style="margin-bottom:10px">${sp.tag?`<span class="pill ${sp.cls}">${esc(sp.tag)}</span> `:""}
+      <span class="pill" style="background:var(--paper);color:var(--soft)">${ntypeName[n.ntype]||n.ntype}${n.sub?" · "+n.sub:""}</span></div>
+    <div class="ds">${esc(sp.text)}</div>${win}
+    <div class="edges">
+      ${out.length?`<div class="eh">Outbound</div>${out.join("")}`:""}
+      ${inb.length?`<div class="eh">Inbound</div>${inb.join("")}`:""}
+    </div></div>`;
+}
+$("#cfilter").addEventListener("input",renderList);
+$("#nlist").addEventListener("click",e=>{ const r=e.target.closest(".nrow"); if(r) selectNode(r.dataset.id); });
+$("#cseg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
+  cfilterType=b.dataset.f; $("#cseg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); renderList(); });
+selId = "t_outside_basis"; renderList(); selectNode(selId);
+
+/* ---------- HUBS ---------- */
+const HUBS = G.nodes.filter(n=>n.ntype==="term")
+  .sort((a,b)=>{ const o={computed:0,statutory:1,interpretive:2}; return (o[a.sub]-o[b.sub]) || a.citation.localeCompare(b.citation); });
+let selHub=null;
+$("#hubpick").innerHTML = HUBS.map(n=>`<div class="hubcard" data-id="${n.id}">
+    <div class="hn">${esc(n.citation)}</div>
+    <div class="hm"><span class="pill ${n.sub==='computed'?'ok':'ctx'}">${esc(n.sub)}</span>
+      <span class="hcount">${G.adj[n.id].length} edges</span></div></div>`).join("");
+$("#hubpick").addEventListener("click",e=>{ const c=e.target.closest(".hubcard"); if(c) renderHub(c.dataset.id); });
+
+const RELDEF=[["defines","Defined by"],["computes","Computed / adjusted by"],["uses","Used by"],
+  ["overflow","Overflows to"],["implements","Implemented by"],["interprets","Interpreted by"],
+  ["informs","Informed by"],["xref","Cross-references"]];
+function relKey(e,id){
+  const inbound=e.d===id;
+  if(e.t==="defines") return "defines";
+  if((e.t==="computes"||e.t==="adjusts")&&inbound) return "computes";
+  if(e.t==="uses"&&inbound) return "uses";
+  if(e.t==="overflow") return "overflow";
+  if(e.t==="implements") return "implements";
+  if(e.t==="interprets") return "interprets";
+  if(e.t==="informs") return "informs";
+  return "xref";
+}
+function hubGroups(id){
+  const g={};
+  G.adj[id].forEach(e=>{ const k=relKey(e,id), other=e.s===id?e.d:e.s;
+    (g[k]=g[k]||[]).push({nid:other, cite:G.byId[other]?G.byId[other].citation:other}); });
+  return g;
+}
+function shortSyn(nid){ const n=G.byId[nid]; return n?splitTag(n.syn).text:""; }
+function radialSVG(hub, spokes){
+  const W=344,H=288,cx=W/2,cy=H/2,R=100;
+  const words=hub.citation.split(" "), l1=words[0].slice(0,13), l2=words.slice(1).join(" ").slice(0,15);
+  const center=`<circle cx="${cx}" cy="${cy}" r="36" fill="var(--blue)"/>
+    <text x="${cx}" y="${l2?cy-3:cy+4}" text-anchor="middle" fill="#fff" font-family="var(--mono)" font-size="10.5" font-weight="600">${esc(l1)}</text>
+    ${l2?`<text x="${cx}" y="${cy+10}" text-anchor="middle" fill="#fff" font-family="var(--mono)" font-size="10.5" font-weight="600">${esc(l2)}</text>`:""}`;
+  const n=Math.max(1,spokes.length);
+  const arms=spokes.map((s,i)=>{ const a=(-90+i*(360/n))*Math.PI/180, x=cx+R*Math.cos(a), y=cy+R*Math.sin(a), bw=120,bh=30;
+    return `<g class="spoke" data-key="${s.key}">
+      <line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--rule-2)"/>
+      <rect class="spokebox" x="${x-bw/2}" y="${y-bh/2}" width="${bw}" height="${bh}" rx="3" fill="#fff" stroke="var(--rule-2)"/>
+      <text x="${x}" y="${y-3}" text-anchor="middle" fill="var(--ink)" font-family="var(--mono)" font-size="9">${esc(s.label)}</text>
+      <text x="${x}" y="${y+9}" text-anchor="middle" fill="var(--blue)" font-family="var(--mono)" font-size="9" font-weight="600">${s.count}</text></g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:344px;overflow:visible">${arms}${center}</svg>`;
+}
+function renderHub(id){
+  selHub=id; const n=G.byId[id]; if(!n) return;
+  document.querySelectorAll(".hubcard").forEach(c=>c.classList.toggle("on",c.dataset.id===id));
+  const groups=hubGroups(id), present=RELDEF.filter(p=>groups[p[0]]);
+  let dagHTML="";
+  if(n.sub==="computed"){ const d=SubK.dag(G,id); if(d.rows.length) dagHTML=`<div id="hub-dag">${dagBlock(n,d)}</div>`; }
+  const listGroups = (n.sub==="computed"&&dagHTML) ? present.filter(p=>p[0]!=="computes"&&p[0]!=="uses") : present;
+  const svg=radialSVG(n, present.map(p=>({key:p[0],label:p[1],count:groups[p[0]].length})));
+  const lists=listGroups.map(p=>{
+    const items=groups[p[0]].map(it=>`<div class="relitem" data-nid="${it.nid}"><span class="rc">${esc(it.cite)}</span><span class="rs">${esc(shortSyn(it.nid))}</span></div>`).join("");
+    return `<div class="relgroup" id="rg-${p[0]}"><div class="relh">${esc(p[1])} <span style="color:var(--soft)">· ${groups[p[0]].length}</span></div>${items}</div>`;
+  }).join("");
+  const sp=splitTag(n.syn);
+  $("#hubview").innerHTML=`<div class="hubtop fade">
+      <div class="hubradial">${svg}</div>
+      <div class="hubmeta">
+        <div class="ht">${esc(n.citation)}</div>
+        <div style="margin-top:7px">${sp.tag?`<span class="pill ${sp.cls}">${esc(sp.tag)}</span> `:""}<span class="pill" style="background:var(--paper);color:var(--soft)">${esc(n.sub||"term")} term · ${G.adj[id].length} edges</span></div>
+        <div class="hd">${esc(sp.text)}</div>
+      </div></div>
+    <div class="hubbody">${dagHTML}<div class="relcols">${lists}</div></div>`;
+  $("#hubview").querySelectorAll(".relitem").forEach(el=>el.addEventListener("click",()=>{ selectNode(el.dataset.nid); document.getElementById("corpus").scrollIntoView(); }));
+  $("#hubview").querySelectorAll(".spoke").forEach(el=>el.addEventListener("click",()=>{ const t=document.getElementById("rg-"+el.dataset.key)||document.getElementById("hub-dag"); if(t) t.scrollIntoView({block:"center"}); }));
+}
+renderHub("t_outside_basis");
+
+/* first paint of Ask */
+runAsk(EXAMPLES[0]); $("#q").value = EXAMPLES[0];
+</script>
+</body>
+</html>

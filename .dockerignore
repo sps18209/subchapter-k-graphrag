@@ -1,0 +1,14 @@
+# Effective at the build context root (the bundle root). Keeps the image lean and
+# keeps secrets / local artifacts out of the layers.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.db
+**/.env
+.git/
+.gitignore
+# Not needed in the API image (the Dockerfile only copies python/ and deploy/):
+web-src/
+design-notes/
+index.html
+*.zip

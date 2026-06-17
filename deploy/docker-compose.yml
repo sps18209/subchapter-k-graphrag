@@ -1,0 +1,79 @@
+# Subchapter K GraphRAG — local / production-shaped stack.
+#
+#   docker compose up --build                         # API on http://localhost:8000 (serves on SQLite)
+#   docker compose --profile tools run --rm migrate   # load schema.sql + seed into Postgres
+#
+# The API serves from the in-process SQLite graph today. The `db` service stands up the
+# production Postgres (pgvector-ready) store; pointing the API at it is the documented
+# next step in DEPLOY.md. `db` is reachable only on the internal network, never the host.
+#
+# All secrets come from .env via env_file (copy .env.example -> .env first). Nothing
+# sensitive is inlined here.
+
+name: subk-graphrag
+
+services:
+  api:
+    build:
+      context: ..                       # bundle root: the image needs python/ and deploy/
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env                            # SUBK_API_KEYS, SUBK_CORS_ORIGINS, DATABASE_URL (used once wired)
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    env_file:
+      - .env                            # provides POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No `ports:` block — the database is not exposed to the host.
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-subk} -d ${POSTGRES_DB:-subk}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot Postgres migration helper. The `tools` profile keeps it out of `up`.
+  # A plain python image with the code mounted read-only, so the lean API image never
+  # has to carry psycopg.
+  migrate:
+    profiles: ["tools"]
+    image: python:3.12-slim
+    restart: "no"
+    working_dir: /app/deploy
+    volumes:
+      - ..:/app:ro
+    env_file:
+      - .env                            # provides DATABASE_URL
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    command: ["sh", "-c", "pip install --no-cache-dir -r requirements-migrate.txt && python migrate_postgres.py"]
+    networks: [backend]
+
+volumes:
+  pgdata:
+
+networks:
+  backend:
+    driver: bridge

@@ -1,0 +1,3 @@
+# Only for migrate_postgres.py (the SQLite -> Postgres production swap).
+# Kept out of the API image to keep it lean; imported lazily by the script.
+psycopg[binary]>=3.1

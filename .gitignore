@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# SQLite graph build (regenerated from seed on demand)
+*.db
+
+# Local scrape/cache artifacts
+.firecrawl/
+
+# OS / editor
+.DS_Store
+*.swp
