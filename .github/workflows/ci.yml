@@ -47,6 +47,10 @@ jobs:
         working-directory: python
         run: python test_hybrid.py
 
+      - name: Gated enrichment (the propose/promote security gate)
+        working-directory: python
+        run: python test_enrich.py
+
       - name: JS <-> Python parity (640 checks; needs node)
         working-directory: python
         run: python parity_test.py

@@ -38,10 +38,11 @@ effective, expired, removed, or revoked. This caught the author's own seed going
 **Layer 1 — deterministic structural graph** (`seed_subk.py`, `seed_recent.py`,
 `graph.py`). Curated nodes and typed edges loaded into SQLite. Cheap, no model.
 
-**Layer 2 — semantic enrichment** (hook, not required). The `synthesis` field on each
-node is hand-authored plain-law text. In production an LLM pass would enrich/expand this
-lazily and cache it; the field and node schema are the wired insertion point. Nothing
-here depends on it to run.
+**Layer 2 — semantic enrichment** (`enrich.py`, gated). The `synthesis` field is hand-authored
+plain-law text. An enricher (offline `stub` or `openai`) can PROPOSE a draft gloss, but drafts
+are quarantined — never written to the graph, so retrieval can't cite them — until an attorney
+PROMOTES one (`enrichment_status` → `enriched`, the only writer). `test_enrich.py` proves the
+gate. Disabled by default; nothing here depends on it to run.
 
 **Layer 3 — GraphRAG retrieval** (`retrieve.py`). Lexical seed (BM25), optionally **fused
 with a dense embedding seed** by Reciprocal Rank Fusion when `SUBK_EMBED_PROVIDER` is set
@@ -106,6 +107,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `calculator.py` — deterministic outside-basis engine (self-validating)
 - `retrieve.py` — Layer 3 retrieval (BM25 + optional dense fusion + expansion + rerank + currency + routing)
 - `embeddings.py` — pluggable embedders (hashing offline stand-in / OpenAI) + the dense index for hybrid retrieval
+- `enrich.py` — gated Layer-2 enrichment: an LLM (stub/OpenAI) drafts glosses; an attorney promotes them (the only writer)
 - `query.py` — one-shot CLI
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
 - `test_subk.py` — 40 checks
@@ -116,6 +118,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
   identical to SQLite across node/neighbors/applicable/currency/lexical + hybrid retrieval
   (skips without `DATABASE_URL`; needs psycopg)
 - `test_hybrid.py` — hybrid (dense + lexical) retrieval checks, offline and deterministic
+- `test_enrich.py` — proves the enrichment gate: drafts are not citable until an attorney promotes them
 - `schema.sql` — production Postgres DDL the SQLite store mirrors
 
 ## Extending

@@ -8,6 +8,9 @@ venv/
 # SQLite graph build (regenerated from seed on demand)
 *.db
 
+# Enrichment review queue (runtime; drafts awaiting attorney promotion)
+proposals/
+
 # Local scrape/cache artifacts
 .firecrawl/
 

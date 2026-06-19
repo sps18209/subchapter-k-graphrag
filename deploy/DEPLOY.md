@@ -77,8 +77,8 @@ Every response is `{"data": ..., "meta": {"request_id": ...}}`; errors are
 
 ## The four production swaps (example → non-example)
 
-Swaps #1 (store), #2 (hybrid retrieval), and #4 (serving) are **done**; #3 (gated
-enrichment) is the remaining hook.
+All four swaps are **done**. The remaining work is the legal-product layer below
+(auth, audit store, citation verification, Rule 1.6 data handling).
 
 1. **Store: SQLite → Postgres. ✅ Done.** `schema.sql` is the production DDL;
    `migrate_postgres.py` loads it plus the seed corpus into the database named by
@@ -97,10 +97,48 @@ enrichment) is the remaining hook.
    in-memory. Graph expansion, the currency filter, and computation routing did not move,
    and `python/test_hybrid.py` + the hybrid cases in `test_postgres_parity.py` cover it.
    Unset `SUBK_EMBED_PROVIDER` = BM25-only (default).
-3. **Enrichment hook → real but gated.** An LLM proposes expanded notes and candidate
-   edges as `created_by='llm'`, unverified; an attorney promotes them before they become
-   authoritative. The model never writes citable law unreviewed.
+3. **Enrichment: hook → real but gated. ✅ Done.** `python/enrich.py` drafts a plain-language
+   gloss (PROPOSE); the draft is quarantined — it is never written to the graph, so retrieval
+   and the currency gate cannot surface it — and an attorney applies it (PROMOTE, the only
+   writer, attributed; `enrichment_status` → `enriched`). The model never writes citable law.
+   Providers: `stub` (offline, no key) or `openai` (`SUBK_ENRICH_PROVIDER`, needs
+   `OPENAI_API_KEY`); enrichment sends ONLY public corpus text. `python/test_enrich.py`
+   proves the gate.
 4. **Serving.** This service. Done.
+
+---
+
+## Before you add an LLM API key (data egress)
+
+A key turns on two outbound paths with very different risk. Know which you are enabling:
+
+| Path | Env | What leaves the building | Risk |
+|------|-----|--------------------------|------|
+| **Enrichment** | `SUBK_ENRICH_PROVIDER=openai` | ONLY public corpus text (citation / label / existing note) | **Low** — no client-matter data |
+| **Query embedding** | `SUBK_EMBED_PROVIDER=openai` | every `/ask` **question** verbatim | **High** — questions can carry matter facts (Rule 1.6) |
+
+So the safe order is: enable **enrichment** with a key first (public text only); keep query
+embedding on the offline `hashing` provider until your data-handling posture is set.
+
+**Checklist before a real key touches the system:**
+
+- [ ] **Account posture** — use a zero-data-retention / no-train OpenAI org with a signed DPA
+  (the standard API does not train on inputs by default, but ZDR is the bar for matter data);
+  set the data region you need.
+- [ ] **Secret handling** — key lives in a secrets manager or the process env, NEVER in code
+  or a committed file. `.env` is gitignored; scope and rotate the key.
+- [ ] **Data minimization** — keep `SUBK_EMBED_PROVIDER=hashing` (queries stay local) until
+  you have decided questions won't carry privileged facts, or you redact them first.
+- [ ] **Egress control** — outbound only to `api.openai.com` over TLS; consider an allowlist or
+  proxy. Enrichment input is auditable (it is corpus text).
+- [ ] **Auth + audit first** — replace the API-key stub with real identity and the stdout audit
+  hook with an immutable store BEFORE exposing the service, since `/ask` inputs and audit rows
+  carry matter data.
+- [ ] **Gate intact** — never auto-apply model output; enrichment stays attorney-promoted
+  (`test_enrich.py` is the regression guard).
+
+Bottom line: the enrichment key is low-risk by design (public text, quarantined, attorney-gated);
+the thing to be careful with is turning the *query embedder* to `openai`.
 
 ---
 
