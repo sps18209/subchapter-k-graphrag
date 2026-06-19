@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # A real pgvector Postgres so the store-swap and hybrid parity tests run in CI.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: subk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install API + test dependencies
+        # The engine itself is pure stdlib; these are only for the API and DB tests.
+        run: pip install -r deploy/requirements.txt httpx "psycopg[binary]"
+
+      - name: Engine suite (40 checks, pure stdlib)
+        working-directory: python
+        run: python test_subk.py
+
+      - name: Hybrid retrieval (offline, deterministic)
+        working-directory: python
+        run: python test_hybrid.py
+
+      - name: JS <-> Python parity (640 checks; needs node)
+        working-directory: python
+        run: python parity_test.py
+
+      - name: Store parity — SQLite vs Postgres (lexical + hybrid)
+        working-directory: python
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/subk_test
+        run: python test_postgres_parity.py
+
+      - name: Postgres migration incl. pgvector embeddings
+        working-directory: deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/subk_test
+          SUBK_EMBED_PROVIDER: hashing
+        run: python migrate_postgres.py
+
+      - name: API suite (30 checks across every endpoint, SQLite)
+        working-directory: deploy
+        run: python test_api.py
