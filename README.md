@@ -49,8 +49,8 @@ Postgres/Neo4j, a wired LLM-enrichment hook).
 ## 3 · API service — `deploy/`
 
 A FastAPI service that wraps the `python/` engine for deployment: `/ask`, `/compute`, `/verify`,
-`/hubs`, `/node`, with an API-key auth stub, an audit hook, and the unverified-seed disclaimer
-carried in every response. It boots on the SQLite engine with no Postgres required, and is
+`/hubs`, `/node`, with OIDC-or-API-key auth, a tamper-evident (hash-chained) audit trail, and the
+unverified-seed disclaimer carried in every response. It boots on the SQLite engine with no Postgres required, and is
 provider-agnostic — Postgres is a `DATABASE_URL` swap.
 
 ```

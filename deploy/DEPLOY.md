@@ -144,17 +144,22 @@ the thing to be careful with is turning the *query embedder* to `openai`.
 
 ## Before any non-internal use (the legal-product layer)
 
-- **Auth** — replace the API-key stub (`auth.py`) with real identity (OIDC or signed
-  JWTs), per-organization scoping, key rotation via your secrets manager, and
-  per-principal rate limiting.
+- **Auth — ✅ OIDC implemented.** `auth.py` verifies real OIDC/JWT bearer tokens against
+  your IdP's JWKS (signature, issuer, audience, expiry) when `SUBK_OIDC_ISSUER` +
+  `SUBK_OIDC_AUDIENCE` are set; the principal is the token's email/sub and an org claim
+  carries the tenant. `test_auth.py` covers it. Still to wire for full production: a
+  per-organization *authorization* policy (the org claim is captured; enforce it per route)
+  and per-principal rate limiting at the gateway. Set up an IdP to get the issuer/audience.
 - **Citation verification** — gate outputs through your citation verifier
   (CourtListener / official sources). Never emit an unverified cite as good law.
 - **Confidentiality (Rule 1.6)** — `/ask` and `/compute` inputs and audit rows can carry
   matter facts. Encrypt at rest and in transit, restrict access, set a retention policy,
   and use no-train / zero-data-retention settings on any LLM calls.
-- **Audit** — replace the stdout hook (`audit.py`) with an append-only / immutable store
-  (hash-chained log, WORM bucket, or append-only Postgres with row-level security). Treat
-  rows as confidential.
+- **Audit — ✅ tamper-evident implemented.** `audit.py` writes a hash-chained, append-only
+  log (each record links to the prior hash; `audit.py verify <file>` detects any
+  alteration, drop, or reorder). Set `SUBK_AUDIT_LOG` to persist to a file. Still to wire:
+  point the sink at an immutable store (WORM bucket or append-only Postgres with RLS) and
+  treat rows as confidential.
 - **Edge / transport** — terminate TLS and enforce rate limiting at the gateway or reverse
   proxy; lock `SUBK_CORS_ORIGINS` down to known origins.
 - **Currency maintenance** — the gate is only as good as the corpus. Stand up the process
@@ -167,7 +172,10 @@ the thing to be careful with is turning the *query embedder* to `openai`.
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `SUBK_API_KEYS` | _(unset → OPEN)_ | Comma-separated `label:key` or bare keys |
+| `SUBK_API_KEYS` | _(unset → OPEN)_ | api-key mode: comma-separated `label:key` or bare keys |
+| `SUBK_OIDC_ISSUER` / `SUBK_OIDC_AUDIENCE` | _(unset)_ | Set both → OIDC mode: verify real JWTs from your IdP |
+| `SUBK_OIDC_JWKS_URL` / `SUBK_OIDC_ORG_CLAIM` | _(discovered)_ / `org_id` | Optional JWKS override; the org/tenant claim |
+| `SUBK_AUDIT_LOG` | _(stdout only)_ | Append hash-chained audit records to this file too |
 | `SUBK_CORS_ORIGINS` | `*` | Allowed browser origins, comma-separated |
 | `SUBK_DB` | temp dir | Path of the SQLite build the API serves from |
 | `DATABASE_URL` | _(unset → SQLite)_ | Postgres URL. Set it and the API reads from Postgres; used by `migrate_postgres.py` too |

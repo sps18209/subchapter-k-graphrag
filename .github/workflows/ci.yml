@@ -36,8 +36,8 @@ jobs:
           node-version: "20"
 
       - name: Install API + test dependencies
-        # The engine itself is pure stdlib; these are only for the API and DB tests.
-        run: pip install -r deploy/requirements.txt httpx "psycopg[binary]"
+        # The engine itself is pure stdlib; these are only for the API, DB, and OIDC tests.
+        run: pip install -r deploy/requirements.txt -r deploy/requirements-oidc.txt httpx "psycopg[binary]"
 
       - name: Engine suite (40 checks, pure stdlib)
         working-directory: python
@@ -71,3 +71,11 @@ jobs:
       - name: API suite (30 checks across every endpoint, SQLite)
         working-directory: deploy
         run: python test_api.py
+
+      - name: Audit trail (hash-chain tamper-evidence)
+        working-directory: deploy
+        run: python test_audit.py
+
+      - name: Auth (OIDC/JWT verification + mode selection)
+        working-directory: deploy
+        run: python test_auth.py

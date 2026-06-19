@@ -1,0 +1,3 @@
+# Only for OIDC auth mode (SUBK_OIDC_ISSUER + SUBK_OIDC_AUDIENCE).
+# Imported lazily by auth.py, so the open / api-key modes need none of this.
+PyJWT[crypto]>=2.8
