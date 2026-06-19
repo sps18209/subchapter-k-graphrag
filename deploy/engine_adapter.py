@@ -10,9 +10,11 @@ It does four things and nothing else:
      how retrieve.retrieve already rebuilds its BM25 index on every call);
   4. serializes the engine's Python return shapes into JSON-ready dicts.
 
-Swapping the store to Postgres (see migrate_postgres.py) means changing `_connect`
-to return a psycopg connection and adjusting the handful of `?`-style placeholders in
-graph.py/retrieve.py to `%s`. The endpoints, serialization, and graph logic do not move.
+Store selection is automatic: when DATABASE_URL is set, `_connect` returns
+graph.pg_connect(url) (the production Postgres store, loaded by migrate_postgres.py);
+otherwise it returns a SQLite connection. graph.pg_connect makes Postgres look identical
+to SQLite to the engine, so the endpoints, serialization, and graph logic do not move.
+test_postgres_parity.py proves both stores return identical results.
 """
 
 from __future__ import annotations
@@ -45,6 +47,11 @@ import retrieve     # noqa: E402
 import calculator as calc  # noqa: E402
 
 DB_PATH = os.environ.get("SUBK_DB", os.path.join(tempfile.gettempdir(), "subk_api.db"))
+# When DATABASE_URL is set the service reads from the production Postgres store (loaded
+# by migrate_postgres.py) instead of building the in-process SQLite graph. graph.pg_connect
+# makes the psycopg connection look identical to SQLite, so nothing else in this module —
+# or in the endpoints, retrieval, or currency gate — changes. Unset = SQLite, as before.
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 TIER_NAME = {1: "statute", 2: "case", 3: "regulation", 4: "ruling/notice", 5: "form/program"}
 
@@ -55,20 +62,42 @@ DISCLAIMER = (
 )
 
 
-# 2. one-time build -------------------------------------------------------------
+# 2. one-time startup -----------------------------------------------------------
 def startup_build() -> dict:
-    """Build the structural graph to DB_PATH and return a small health summary."""
+    """Ready the store and return a small health summary. SQLite: build from seed.
+    Postgres: connect to the already-migrated store and verify integrity."""
+    if DATABASE_URL:
+        con = graph.pg_connect(DATABASE_URL)
+        try:
+            nn = con.execute("SELECT COUNT(*) FROM node").fetchone()[0]
+            ne = con.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
+            problems = graph.integrity(con)
+        except Exception as e:
+            if "tax_node" in str(e) or "does not exist" in str(e):
+                raise RuntimeError(
+                    "DATABASE_URL is set but the Postgres store is not initialized "
+                    "(no tax_node table). Load the schema + seed first: "
+                    "`python migrate_postgres.py` "
+                    "(or `docker compose --profile tools run --rm migrate`)."
+                ) from e
+            raise
+        finally:
+            con.close()
+        return {"store": "postgres", "nodes": nn, "edges": ne, "integrity_problems": len(problems)}
     con = graph.build(DB_PATH)
     problems = graph.integrity(con)
     nn = con.execute("SELECT COUNT(*) FROM node").fetchone()[0]
     ne = con.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
     con.close()
-    return {"nodes": nn, "edges": ne, "integrity_problems": len(problems)}
+    return {"store": "sqlite", "nodes": nn, "edges": ne, "integrity_problems": len(problems)}
 
 
 # 3. per-request connection -----------------------------------------------------
-def _connect() -> sqlite3.Connection:
-    # check_same_thread=False is belt-and-suspenders; each request opens its own.
+def _connect():
+    # Postgres when DATABASE_URL is set, else a fresh SQLite connection per request
+    # (check_same_thread=False is belt-and-suspenders under uvicorn worker threads).
+    if DATABASE_URL:
+        return graph.pg_connect(DATABASE_URL)
     return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 

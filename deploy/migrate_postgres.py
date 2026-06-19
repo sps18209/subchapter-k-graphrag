@@ -6,12 +6,13 @@ named by DATABASE_URL, then inserts the same seed corpus the SQLite runtime buil
 This is the concrete SQLite -> Postgres swap: schema.sql is already the prod DDL, so
 the data does not change shape; only the engine.
 
-After running this you have a populated Postgres. The remaining wire is to point
-engine_adapter._connect at this database (return a psycopg connection) and switch the
-handful of `?` placeholders in graph.py / retrieve.py to `%s`, and table names node/edge
-to tax_node/tax_edge. The endpoints, serialization, retrieval logic, and currency gate
-do not move. The dense-retrieval upgrade (BM25 -> embeddings) is the vector column noted
-at the bottom of schema.sql.
+After running this you have a populated Postgres. Reading from it is already wired: start
+the API with the same DATABASE_URL set and engine_adapter._connect returns
+graph.pg_connect(url) — a wrapper that rewrites the SQLite-shaped queries (`?`->`%s`,
+node/edge->tax_node/tax_edge) and normalizes DATE/TEXT[] columns, so the endpoints,
+serialization, retrieval logic, and currency gate do not move. test_postgres_parity.py
+proves the two stores return identical results. The dense-retrieval upgrade (BM25 ->
+embeddings) is the vector column noted at the bottom of schema.sql.
 
 Run:  DATABASE_URL=postgresql://user:pass@host:5432/db python migrate_postgres.py
 Deps: pip install -r requirements-migrate.txt
@@ -55,7 +56,8 @@ def main() -> None:
     nodes = seed_subk.NODES + seed_recent.NODES
     edges = seed_subk.EDGES + seed_recent.EDGES
 
-    with psycopg.connect(url) as con:
+    # client_encoding pinned to UTF-8 — the seed text carries § and — characters.
+    with psycopg.connect(url, client_encoding="UTF8") as con:
         with con.cursor() as cur:
             cur.execute("DROP TABLE IF EXISTS tax_edge CASCADE; DROP TABLE IF EXISTS tax_node CASCADE;")
             cur.execute(ddl)
@@ -81,8 +83,8 @@ def main() -> None:
             ).fetchone()[0]
 
     print(f"migrated to Postgres: {nn} nodes, {ne} edges, dangling edges {dangling}")
-    print("NOTE: the API still reads via the SQLite adapter until engine_adapter._connect "
-          "is pointed at this database (see this file's docstring).")
+    print("Done. Start the API with this same DATABASE_URL set and it reads from Postgres "
+          "(graph.pg_connect); leave DATABASE_URL unset to serve from SQLite.")
 
 
 if __name__ == "__main__":

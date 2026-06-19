@@ -63,7 +63,11 @@ services:
     volumes:
       - ..:/app:ro
     env_file:
-      - .env                            # provides DATABASE_URL
+      - .env
+    # Derive DATABASE_URL from POSTGRES_* so migration works even when DATABASE_URL is
+    # left commented in .env (the SQLite-by-default case). An explicit DATABASE_URL wins.
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-subk}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-subk}}
     depends_on:
       db:
         condition: service_healthy

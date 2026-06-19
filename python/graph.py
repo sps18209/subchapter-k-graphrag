@@ -44,6 +44,78 @@ def build(db_path: str = DB) -> sqlite3.Connection:
     return con
 
 
+# --- Postgres read path (the production store) ---------------------------------
+# The engine is written against the SQLite schema: tables `node`/`edge`, `?` params,
+# tags as a "a|b|c" string, dates as ISO text. The production store (schema.sql, loaded
+# by deploy/migrate_postgres.py) uses `tax_node`/`tax_edge`, `%s` params, a native
+# TEXT[] tags column, and DATE columns. This thin wrapper makes a psycopg connection
+# look EXACTLY like the SQLite one to the rest of the engine — it rewrites the SQL and
+# normalizes the two divergent types — so node(), neighbors(), the currency gate, and
+# retrieve.* run UNCHANGED against either store. Reads only.
+import re as _re
+from datetime import datetime as _datetime
+
+_TABLE_RX = _re.compile(r"\b(node|edge)\b")
+
+
+def _translate(sql: str) -> str:
+    """SQLite-shaped query -> Postgres: node/edge -> tax_node/tax_edge, ? -> %s."""
+    return _TABLE_RX.sub(lambda m: "tax_" + m.group(1), sql).replace("?", "%s")
+
+
+def _norm_cell(v):
+    if isinstance(v, list):                          # tags TEXT[] -> SQLite's "a|b|c"
+        return "|".join(v)
+    if isinstance(v, (date, _datetime)):             # DATE -> "YYYY-MM-DD"
+        return v.isoformat()
+    return v
+
+
+class _Result:
+    """Eager, type-normalized result set that quacks like a sqlite3 cursor."""
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return list(self._rows)
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _PgConnection:
+    """Wraps a psycopg connection so the engine's SQLite-shaped queries just work."""
+    def __init__(self, raw):
+        self._raw = raw
+
+    def execute(self, sql, params=()):
+        with self._raw.cursor() as cur:
+            cur.execute(_translate(sql), params)
+            rows = [tuple(_norm_cell(v) for v in r) for r in cur.fetchall()] if cur.description else []
+        return _Result(rows)
+
+    def close(self):
+        try:
+            self._raw.close()
+        except Exception:
+            pass
+
+
+def pg_connect(url: str) -> _PgConnection:
+    """Open the production Postgres store and wrap it for the engine.
+    psycopg is imported lazily so the SQLite path stays pure-stdlib."""
+    try:
+        import psycopg
+    except ImportError as e:  # pragma: no cover
+        raise RuntimeError("psycopg not installed; run: pip install 'psycopg[binary]'") from e
+    # client_encoding pinned to UTF-8: the corpus carries § and — regardless of the
+    # server's locale, so never let the client fall back to an ASCII encoding.
+    return _PgConnection(psycopg.connect(url, autocommit=True, client_encoding="UTF8"))
+
+
 def integrity(con: sqlite3.Connection) -> list[str]:
     """Every edge endpoint must be a real node. Returns a list of problems."""
     ids = {r[0] for r in con.execute("SELECT id FROM node")}

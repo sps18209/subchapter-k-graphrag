@@ -2,13 +2,14 @@
 
 A FastAPI service wrapping the definition-centric partnership-tax GraphRAG engine:
 authority retrieval, the Layer-0 currency/supersession gate, and the deterministic
-outside-basis calculator. It runs out of the box on the in-process SQLite build;
-Postgres is the documented production store.
+outside-basis calculator. It runs out of the box on the in-process SQLite build, and
+reads from the production Postgres store the moment `DATABASE_URL` is set.
 
-**Honest status.** The running API serves from the SQLite graph built at startup.
-`migrate_postgres.py` provisions the Postgres store (schema + seed); pointing the API's
-reads at Postgres is one small, documented change (see *The four production swaps*).
-Nothing here is verified law — every `/ask` and `/compute` response carries
+**Honest status.** With no `DATABASE_URL` the API builds and serves the in-process SQLite
+graph at startup. Set `DATABASE_URL` (after `migrate_postgres.py` loads schema + seed) and
+the same API reads from Postgres instead — the store swap is wired and verified
+(`python/test_postgres_parity.py` asserts the two stores return identical results). Nothing
+here is verified law — every `/ask` and `/compute` response carries
 `verification_required: true` and a disclaimer. An attorney must verify before reliance.
 
 ---
@@ -36,12 +37,21 @@ cp .env.example .env          # then edit the secrets
 docker compose up --build     # API on http://localhost:8000
 ```
 
-The stack also starts a pgvector Postgres (`db`), not published to the host. Load the
-production schema + seed into it:
+By default `DATABASE_URL` is commented out in `.env`, so the API boots on SQLite with no
+further setup. The stack also starts a pgvector Postgres (`db`), not published to the host.
+
+**To serve from Postgres instead:**
 
 ```bash
-docker compose --profile tools run --rm migrate
+docker compose --profile tools run --rm migrate   # load schema.sql + seed into Postgres
+# then uncomment DATABASE_URL in .env and restart the API:
+docker compose up -d api
 ```
+
+Order matters: migrate before the API reads from Postgres. If `DATABASE_URL` points at an
+un-migrated database, the API fails fast at startup with a message telling you to run the
+migration. Point `DATABASE_URL` at a managed provider (Supabase/Neon/RDS/Cloud SQL) by
+changing the host — nothing else moves.
 
 ---
 
@@ -67,14 +77,17 @@ Every response is `{"data": ..., "meta": {"request_id": ...}}`; errors are
 
 ## The four production swaps (example → non-example)
 
-This scaffold is swap #4 (serving), with the hooks for the rest.
+Swaps #1 (store) and #4 (serving) are **done**; #2 (hybrid retrieval) and #3 (gated
+enrichment) are the remaining hooks.
 
-1. **Store: SQLite → Postgres.** `schema.sql` is already the production DDL;
+1. **Store: SQLite → Postgres. ✅ Done.** `schema.sql` is the production DDL;
    `migrate_postgres.py` loads it plus the seed corpus into the database named by
-   `DATABASE_URL`. To make the *API* read from Postgres: point `engine_adapter._connect`
-   at a `psycopg` connection, switch the handful of `?` placeholders to `%s` in
-   `graph.py` / `retrieve.py`, and the table names `node` / `edge` to `tax_node` /
-   `tax_edge`. Endpoints, serialization, retrieval logic, and the currency gate do not move.
+   `DATABASE_URL`. Setting `DATABASE_URL` is now all it takes to make the API read from
+   Postgres: `engine_adapter._connect` returns `graph.pg_connect(url)`, a thin wrapper that
+   rewrites the SQLite-shaped queries (`?`→`%s`, `node`/`edge`→`tax_node`/`tax_edge`) and
+   normalizes Postgres `DATE`/`TEXT[]` back to the engine's string types. Endpoints,
+   serialization, retrieval logic, and the currency gate did not move — and
+   `python/test_postgres_parity.py` proves both stores return identical results.
 2. **Retrieval: BM25 → hybrid.** Add an embedding column (pgvector; the `ALTER` is noted
    at the bottom of `schema.sql`), store vectors, run dense kNN fused with the existing
    lexical channel, then a reranker. Graph expansion, the currency filter, and computation
@@ -114,7 +127,7 @@ This scaffold is swap #4 (serving), with the hooks for the rest.
 | `SUBK_API_KEYS` | _(unset → OPEN)_ | Comma-separated `label:key` or bare keys |
 | `SUBK_CORS_ORIGINS` | `*` | Allowed browser origins, comma-separated |
 | `SUBK_DB` | temp dir | Path of the SQLite build the API serves from |
-| `DATABASE_URL` | _(unset)_ | Postgres URL for `migrate_postgres.py` (and the API once wired) |
+| `DATABASE_URL` | _(unset → SQLite)_ | Postgres URL. Set it and the API reads from Postgres; used by `migrate_postgres.py` too |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `subk` / `changeme` / `subk` | compose Postgres |
 | `API_PORT` | `8000` | Host port the compose stack publishes |
 

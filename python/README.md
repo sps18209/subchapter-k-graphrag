@@ -63,7 +63,7 @@ Joe Johnson: §731(a) gain 220k / ending basis 0).
 | Piece | Here | Production swap |
 |---|---|---|
 | Retrieval seed | BM25 (stdlib) | embeddings + vector store (pgvector/Qdrant) |
-| Store | SQLite | Postgres + a graph store (Neo4j) — `schema.sql` is the DDL |
+| Store | SQLite (default) | Postgres — **wired**: set `DATABASE_URL` and `graph.pg_connect` serves from `schema.sql`'s `tax_node`/`tax_edge` with identical results (`test_postgres_parity.py`) |
 | Semantic layer | hand-authored `synthesis` | lazy LLM enrichment, cached |
 | Calculator | outside basis | + inside basis / §743(b) and §704(b) capital-account engines |
 
@@ -110,6 +110,9 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `parity_test.py` — 640 cross-language checks proving `web-src/engine.js` matches this
   engine on retrieval, computation, currency, DAGs, and the applicability gate (runs the
   same battery through Node and asserts byte-for-byte agreement; needs `node` on PATH)
+- `test_postgres_parity.py` — proves the production Postgres store returns results
+  identical to SQLite across node/neighbors/applicable/currency/retrieval (skips without
+  `DATABASE_URL`; needs psycopg)
 - `schema.sql` — production Postgres DDL the SQLite store mirrors
 
 ## Extending
