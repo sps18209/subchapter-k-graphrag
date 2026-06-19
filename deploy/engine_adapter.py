@@ -45,6 +45,7 @@ if ENGINE_DIR not in sys.path:
 import graph        # noqa: E402  (import after sys.path mutation, intentional)
 import retrieve     # noqa: E402
 import calculator as calc  # noqa: E402
+import embeddings   # noqa: E402
 
 DB_PATH = os.environ.get("SUBK_DB", os.path.join(tempfile.gettempdir(), "subk_api.db"))
 # When DATABASE_URL is set the service reads from the production Postgres store (loaded
@@ -52,6 +53,12 @@ DB_PATH = os.environ.get("SUBK_DB", os.path.join(tempfile.gettempdir(), "subk_ap
 # makes the psycopg connection look identical to SQLite, so nothing else in this module —
 # or in the endpoints, retrieval, or currency gate — changes. Unset = SQLite, as before.
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# Hybrid retrieval (Layer 3, swap #2). _EMBEDDER is None unless SUBK_EMBED_PROVIDER is set,
+# in which case _DENSE is an in-memory dense index built once at startup and fused with BM25
+# per request. Unset => BM25-only, exactly as before.
+_EMBEDDER = embeddings.get_embedder()
+_DENSE = None
 
 TIER_NAME = {1: "statute", 2: "case", 3: "regulation", 4: "ruling/notice", 5: "form/program"}
 
@@ -64,14 +71,18 @@ DISCLAIMER = (
 
 # 2. one-time startup -----------------------------------------------------------
 def startup_build() -> dict:
-    """Ready the store and return a small health summary. SQLite: build from seed.
-    Postgres: connect to the already-migrated store and verify integrity."""
+    """Ready the store, build the dense index if hybrid retrieval is enabled, and return a
+    small health summary. SQLite: build from seed. Postgres: connect to the already-migrated
+    store and verify integrity."""
+    global _DENSE
     if DATABASE_URL:
         con = graph.pg_connect(DATABASE_URL)
         try:
             nn = con.execute("SELECT COUNT(*) FROM node").fetchone()[0]
             ne = con.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
             problems = graph.integrity(con)
+            if _EMBEDDER is not None:
+                _DENSE = embeddings.DenseIndex.from_docs(_EMBEDDER, retrieve._docs(con))
         except Exception as e:
             if "tax_node" in str(e) or "does not exist" in str(e):
                 raise RuntimeError(
@@ -83,13 +94,18 @@ def startup_build() -> dict:
             raise
         finally:
             con.close()
-        return {"store": "postgres", "nodes": nn, "edges": ne, "integrity_problems": len(problems)}
-    con = graph.build(DB_PATH)
-    problems = graph.integrity(con)
-    nn = con.execute("SELECT COUNT(*) FROM node").fetchone()[0]
-    ne = con.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
-    con.close()
-    return {"store": "sqlite", "nodes": nn, "edges": ne, "integrity_problems": len(problems)}
+        summary = {"store": "postgres", "nodes": nn, "edges": ne, "integrity_problems": len(problems)}
+    else:
+        con = graph.build(DB_PATH)
+        problems = graph.integrity(con)
+        nn = con.execute("SELECT COUNT(*) FROM node").fetchone()[0]
+        ne = con.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
+        if _EMBEDDER is not None:
+            _DENSE = embeddings.DenseIndex.from_docs(_EMBEDDER, retrieve._docs(con))
+        con.close()
+        summary = {"store": "sqlite", "nodes": nn, "edges": ne, "integrity_problems": len(problems)}
+    summary["retrieval"] = "hybrid (" + _EMBEDDER.name + " + bm25)" if _EMBEDDER else "bm25"
+    return summary
 
 
 # 3. per-request connection -----------------------------------------------------
@@ -135,7 +151,7 @@ def _dag_for(con, hub_id: str) -> dict:
 def ask(question: str, as_of: str | None) -> dict:
     con = _connect()
     try:
-        r = retrieve.retrieve(con, question, as_of=as_of)
+        r = retrieve.retrieve(con, question, as_of=as_of, dense=_DENSE)
         results = [_node_brief(n, rel) for (n, rel) in r["results"]]
         computed_terms = []
         for hub in r["computed_hubs"]:

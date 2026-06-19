@@ -21,6 +21,7 @@ import sys
 
 import graph
 import retrieve
+import embeddings
 
 
 def _skip(msg: str):
@@ -61,8 +62,8 @@ def _sorted_neighbors(ns):
     return sorted(ns, key=lambda e: (e["src"], e["dst"], e["etype"]))
 
 
-def _retr(con, q, as_of=None):
-    r = retrieve.retrieve(con, q, as_of=as_of)
+def _retr(con, q, as_of=None, dense=None):
+    r = retrieve.retrieve(con, q, as_of=as_of, dense=dense)
     return {
         "results": [(n["citation"], n["tier"], round(rel, 6)) for n, rel in r["results"]],
         "seeds": list(r["seeds"]),
@@ -117,9 +118,19 @@ def main() -> int:
         for d in [None, "2016-06-01", "2026-06-01"]:
             eq(f"retrieve {q!r} {d}", _retr(lite, q, d), _retr(pg, q, d))
 
+    # hybrid (dense + lexical): the dense index is derived from each store's node text, so
+    # the deterministic hashing embedder must yield identical vectors and identical results.
+    embedder = embeddings.HashingEmbedder()
+    dlite = embeddings.DenseIndex.from_docs(embedder, retrieve._docs(lite))
+    dpg = embeddings.DenseIndex.from_docs(embedder, retrieve._docs(pg))
+    eq("dense vectors identical across stores", dlite.vectors, dpg.vectors)
+    for q in queries + ["capitalaccount", "partnership minimum tax"]:
+        for d in [None, "2026-06-01"]:
+            eq(f"hybrid {q!r} {d}", _retr(lite, q, d, dlite), _retr(pg, q, d, dpg))
+
     pg.close()
     print(f"\ncompared {len(ids)} nodes x {len(dates)} dates + currency + "
-          f"{len(queries)} queries across both stores")
+          f"{len(queries)} queries (lexical + hybrid) across both stores")
     if fails:
         print(f"STORE PARITY FAILED — {fails} mismatches between SQLite and Postgres")
         return 1

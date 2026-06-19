@@ -49,12 +49,18 @@ def main() -> None:
     sys.path.insert(0, engine_dir)
     import seed_subk
     import seed_recent
+    import retrieve
+    import embeddings
 
     with open(os.path.join(engine_dir, "schema.sql"), "r") as f:
         ddl = f.read()
 
     nodes = seed_subk.NODES + seed_recent.NODES
     edges = seed_subk.EDGES + seed_recent.EDGES
+
+    # Optional dense layer (swap #2): when SUBK_EMBED_PROVIDER is set, persist a pgvector
+    # column + HNSW index. Uses the SAME doc text as BM25 and the in-memory dense index.
+    embedder = embeddings.get_embedder()
 
     # client_encoding pinned to UTF-8 — the seed text carries § and — characters.
     with psycopg.connect(url, client_encoding="UTF8") as con:
@@ -72,6 +78,17 @@ def main() -> None:
                 " VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 edges,
             )
+            if embedder is not None:
+                texts = [retrieve.doc_text(n[2], n[3], n[6], "|".join(n[7]), n[0]) for n in nodes]
+                vecs = embedder.embed_many(texts)
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                cur.execute(f"ALTER TABLE tax_node ADD COLUMN IF NOT EXISTS embedding vector({embedder.dim})")
+                cur.executemany(
+                    "UPDATE tax_node SET embedding = %s::vector WHERE id = %s",
+                    [("[" + ",".join(f"{x:.7f}" for x in v) + "]", n[0]) for v, n in zip(vecs, nodes)],
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS i_node_embedding ON tax_node "
+                            "USING hnsw (embedding vector_cosine_ops)")
         con.commit()
         with con.cursor() as cur:
             nn = cur.execute("SELECT COUNT(*) FROM tax_node").fetchone()[0]
@@ -82,7 +99,9 @@ def main() -> None:
                 " OR NOT EXISTS (SELECT 1 FROM tax_node n WHERE n.id=e.dst)"
             ).fetchone()[0]
 
-    print(f"migrated to Postgres: {nn} nodes, {ne} edges, dangling edges {dangling}")
+    emb_note = f", embeddings stored ({embedder.name}, dim {embedder.dim}, pgvector + HNSW)" \
+        if embedder is not None else ""
+    print(f"migrated to Postgres: {nn} nodes, {ne} edges, dangling edges {dangling}{emb_note}")
     print("Done. Start the API with this same DATABASE_URL set and it reads from Postgres "
           "(graph.pg_connect); leave DATABASE_URL unset to serve from SQLite.")
 

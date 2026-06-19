@@ -56,12 +56,38 @@ class BM25:
         return scored[:k]
 
 
+def doc_text(citation, label, synthesis, tags, nid) -> str:
+    """The text a node is indexed and embedded on. Defined once so BM25, the dense index
+    (embeddings.py), and the Postgres vector migration never diverge. `tags` is the
+    "a|b|c" string form."""
+    return " ".join([citation, label, synthesis or "", (tags or "").replace("|", " "),
+                     nid.replace("_", " ")])
+
+
 def _docs(con):
-    out = {}
-    for nid, cite, label, syn, tags in con.execute(
-            "SELECT id,citation,label,synthesis,tags FROM node"):
-        out[nid] = " ".join([cite, label, syn or "", (tags or "").replace("|", " "), nid.replace("_", " ")])
-    return out
+    return {nid: doc_text(cite, label, syn, tags, nid)
+            for nid, cite, label, syn, tags in
+            con.execute("SELECT id,citation,label,synthesis,tags FROM node")}
+
+
+def _rrf_rank(scores: dict) -> dict:
+    """Map id -> 0-based rank (best first), descending by score, id as the tiebreak."""
+    return {i: r for r, i in enumerate(sorted(scores, key=lambda i: (-scores[i], i)))}
+
+
+def _seeds(bm: "BM25", question: str, seed_k: int, dense, k_rrf: int = 60) -> list:
+    """Seed ids for graph expansion. BM25-only when dense is None (the default, unchanged);
+    otherwise Reciprocal Rank Fusion of the lexical (BM25) and dense (embedding) rankings —
+    a node ranked high by EITHER channel can seed retrieval."""
+    if dense is None:
+        return [i for _, i in bm.topk(question, seed_k)]
+    bm_scores = {i: s for i, s in ((j, bm.score(question, j)) for j in bm.ids) if s > 0}
+    d_scores = dense.scores(question)
+    rb, rd = _rrf_rank(bm_scores), _rrf_rank(d_scores)
+    ids = set(rb) | set(rd)
+    rrf = {i: (1.0 / (k_rrf + rb[i]) if i in rb else 0.0)
+              + (1.0 / (k_rrf + rd[i]) if i in rd else 0.0) for i in ids}
+    return sorted(ids, key=lambda i: (-rrf[i], i))[:seed_k]
 
 
 _COMPUTE = re.compile(r"\b(comput|calculat|figure|how much|what.+basis|ending basis|gain|suspend)", re.I)
@@ -69,9 +95,10 @@ def _is_computation(q: str) -> bool:
     return "basis" in q.lower() and bool(_COMPUTE.search(q))
 
 
-def retrieve(con, question: str, as_of: str | None = None, seed_k: int = 8, top_n: int = 16) -> dict:
+def retrieve(con, question: str, as_of: str | None = None, seed_k: int = 8, top_n: int = 16,
+             dense=None) -> dict:
     bm = BM25(_docs(con))
-    seeds = [i for _, i in bm.topk(question, seed_k)]
+    seeds = _seeds(bm, question, seed_k, dense)
 
     # 2. expansion
     visited, frontier = set(seeds), list(seeds)

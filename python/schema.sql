@@ -33,7 +33,11 @@ CREATE INDEX i_edge_dst   ON tax_edge(dst);
 CREATE INDEX i_edge_etype ON tax_edge(etype);
 CREATE INDEX i_node_tier  ON tax_node(tier);
 
--- Production retrieval adds a vector column for Layer 3 dense seeding:
---   ALTER TABLE tax_node ADD COLUMN embedding vector(768);
---   CREATE INDEX ON tax_node USING hnsw (embedding vector_cosine_ops);
--- The SQLite runtime substitutes BM25 for this; everything else is identical.
+-- Layer 3 dense seeding (swap #2, HYBRID retrieval): a pgvector column for embeddings.
+-- migrate_postgres.py adds and populates this automatically when SUBK_EMBED_PROVIDER is
+-- set (dimension matches the provider — 256 for the hashing stand-in, 1536 for OpenAI):
+--   CREATE EXTENSION IF NOT EXISTS vector;
+--   ALTER TABLE tax_node ADD COLUMN embedding vector(<dim>);
+--   CREATE INDEX i_node_embedding ON tax_node USING hnsw (embedding vector_cosine_ops);
+-- The engine fuses dense + BM25 (Reciprocal Rank Fusion). At the current corpus scale it
+-- scores in-memory; the HNSW index is the drop-in for kNN-in-SQL as the corpus grows.

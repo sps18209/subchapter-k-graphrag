@@ -43,10 +43,11 @@ node is hand-authored plain-law text. In production an LLM pass would enrich/exp
 lazily and cache it; the field and node schema are the wired insertion point. Nothing
 here depends on it to run.
 
-**Layer 3 — GraphRAG retrieval** (`retrieve.py`). Lexical seed (BM25) → graph expansion
-(2 hops; a computed-term hub pulls its entire input DAG) → authority-tier rerank with the
-lexical seeds preserved through truncation → currency filter → assemble with citations.
-Basis questions are flagged and routed to the calculator.
+**Layer 3 — GraphRAG retrieval** (`retrieve.py`). Lexical seed (BM25), optionally **fused
+with a dense embedding seed** by Reciprocal Rank Fusion when `SUBK_EMBED_PROVIDER` is set
+(`embeddings.py`) → graph expansion (2 hops; a computed-term hub pulls its entire input
+DAG) → authority-tier rerank with the seeds preserved through truncation → currency filter
+→ assemble with citations. Basis questions are flagged and routed to the calculator.
 
 ## The calculator is not graph data
 
@@ -62,7 +63,7 @@ Joe Johnson: §731(a) gain 220k / ending basis 0).
 
 | Piece | Here | Production swap |
 |---|---|---|
-| Retrieval seed | BM25 (stdlib) | embeddings + vector store (pgvector/Qdrant) |
+| Retrieval | BM25 default; **hybrid wired** | set `SUBK_EMBED_PROVIDER` → dense+BM25 fused by RRF (hashing offline stand-in / OpenAI); vectors persist in pgvector |
 | Store | SQLite (default) | Postgres — **wired**: set `DATABASE_URL` and `graph.pg_connect` serves from `schema.sql`'s `tax_node`/`tax_edge` with identical results (`test_postgres_parity.py`) |
 | Semantic layer | hand-authored `synthesis` | lazy LLM enrichment, cached |
 | Calculator | outside basis | + inside basis / §743(b) and §704(b) capital-account engines |
@@ -103,7 +104,8 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `seed_recent.py` — verified 2024-2026 layer + supersession chain
 - `graph.py` — SQLite store, currency/supersession gate, integrity check
 - `calculator.py` — deterministic outside-basis engine (self-validating)
-- `retrieve.py` — Layer 3 retrieval (BM25 + expansion + rerank + currency + routing)
+- `retrieve.py` — Layer 3 retrieval (BM25 + optional dense fusion + expansion + rerank + currency + routing)
+- `embeddings.py` — pluggable embedders (hashing offline stand-in / OpenAI) + the dense index for hybrid retrieval
 - `query.py` — one-shot CLI
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
 - `test_subk.py` — 40 checks
@@ -111,8 +113,9 @@ basis), so the graph surfaces structure to check, it does not certify it.
   engine on retrieval, computation, currency, DAGs, and the applicability gate (runs the
   same battery through Node and asserts byte-for-byte agreement; needs `node` on PATH)
 - `test_postgres_parity.py` — proves the production Postgres store returns results
-  identical to SQLite across node/neighbors/applicable/currency/retrieval (skips without
-  `DATABASE_URL`; needs psycopg)
+  identical to SQLite across node/neighbors/applicable/currency/lexical + hybrid retrieval
+  (skips without `DATABASE_URL`; needs psycopg)
+- `test_hybrid.py` — hybrid (dense + lexical) retrieval checks, offline and deterministic
 - `schema.sql` — production Postgres DDL the SQLite store mirrors
 
 ## Extending

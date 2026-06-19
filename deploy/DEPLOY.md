@@ -77,8 +77,8 @@ Every response is `{"data": ..., "meta": {"request_id": ...}}`; errors are
 
 ## The four production swaps (example → non-example)
 
-Swaps #1 (store) and #4 (serving) are **done**; #2 (hybrid retrieval) and #3 (gated
-enrichment) are the remaining hooks.
+Swaps #1 (store), #2 (hybrid retrieval), and #4 (serving) are **done**; #3 (gated
+enrichment) is the remaining hook.
 
 1. **Store: SQLite → Postgres. ✅ Done.** `schema.sql` is the production DDL;
    `migrate_postgres.py` loads it plus the seed corpus into the database named by
@@ -88,10 +88,15 @@ enrichment) are the remaining hooks.
    normalizes Postgres `DATE`/`TEXT[]` back to the engine's string types. Endpoints,
    serialization, retrieval logic, and the currency gate did not move — and
    `python/test_postgres_parity.py` proves both stores return identical results.
-2. **Retrieval: BM25 → hybrid.** Add an embedding column (pgvector; the `ALTER` is noted
-   at the bottom of `schema.sql`), store vectors, run dense kNN fused with the existing
-   lexical channel, then a reranker. Graph expansion, the currency filter, and computation
-   routing are unchanged.
+2. **Retrieval: BM25 → hybrid. ✅ Done.** Set `SUBK_EMBED_PROVIDER` and the lexical seed is
+   fused with a dense (embedding) seed by Reciprocal Rank Fusion — a node ranked high by
+   either channel seeds retrieval. The embedder is pluggable: `hashing` (pure-stdlib,
+   offline, deterministic stand-in) or `openai` (real semantic embeddings, needs
+   `OPENAI_API_KEY`). On Postgres, `migrate_postgres.py` stores vectors in a pgvector column
+   with an HNSW index (the kNN-at-scale path); at the current corpus size the engine fuses
+   in-memory. Graph expansion, the currency filter, and computation routing did not move,
+   and `python/test_hybrid.py` + the hybrid cases in `test_postgres_parity.py` cover it.
+   Unset `SUBK_EMBED_PROVIDER` = BM25-only (default).
 3. **Enrichment hook → real but gated.** An LLM proposes expanded notes and candidate
    edges as `created_by='llm'`, unverified; an attorney promotes them before they become
    authoritative. The model never writes citable law unreviewed.
@@ -129,6 +134,9 @@ enrichment) are the remaining hooks.
 | `SUBK_DB` | temp dir | Path of the SQLite build the API serves from |
 | `DATABASE_URL` | _(unset → SQLite)_ | Postgres URL. Set it and the API reads from Postgres; used by `migrate_postgres.py` too |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `subk` / `changeme` / `subk` | compose Postgres |
+| `SUBK_EMBED_PROVIDER` | _(unset → BM25-only)_ | `hashing` (offline stdlib) or `openai` — enables hybrid dense+lexical retrieval |
+| `SUBK_EMBED_DIM` | `256` | Hashing-embedder dimension (must match the migrated pgvector column) |
+| `OPENAI_API_KEY` / `SUBK_EMBED_MODEL` | _(unset)_ / `text-embedding-3-small` | For `SUBK_EMBED_PROVIDER=openai` |
 | `API_PORT` | `8000` | Host port the compose stack publishes |
 
 ---
