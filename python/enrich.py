@@ -36,6 +36,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 import graph
+import cite_verify
 
 DRAFT_PREFIX = "[DRAFT—unverified, attorney review required] "
 PROPOSALS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proposals")
@@ -96,11 +97,16 @@ def propose(con, node_id: str, enricher) -> dict:
     n = graph.node(con, node_id)
     if not n:
         raise ValueError(f"no node '{node_id}'")
+    draft = enricher.propose_synthesis(n)
+    # Verify every citation the draft references, so the reviewing attorney sees which are
+    # corpus-backed vs. unrecognized (a hallucinated cite is the failure mode to catch).
+    cite_check = cite_verify.verify_text(draft, cite_verify.corpus_cites(con), cite_verify.get_verifier())
     return {
         "node_id": node_id,
         "kind": "synthesis",
         "current": n["synthesis"],
-        "draft": enricher.propose_synthesis(n),
+        "draft": draft,
+        "cite_check": cite_check,
         "model": enricher.name,
         "status": "proposed",
         "proposed_at": datetime.now(timezone.utc).isoformat(),

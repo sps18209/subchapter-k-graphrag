@@ -51,6 +51,10 @@ jobs:
         working-directory: python
         run: python test_enrich.py
 
+      - name: Citation verification gate
+        working-directory: python
+        run: python test_cite_verify.py
+
       - name: JS <-> Python parity (640 checks; needs node)
         working-directory: python
         run: python parity_test.py

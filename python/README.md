@@ -108,6 +108,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `retrieve.py` — Layer 3 retrieval (BM25 + optional dense fusion + expansion + rerank + currency + routing)
 - `embeddings.py` — pluggable embedders (hashing offline stand-in / OpenAI) + the dense index for hybrid retrieval
 - `enrich.py` — gated Layer-2 enrichment: an LLM (stub/OpenAI) drafts glosses; an attorney promotes them (the only writer)
+- `cite_verify.py` — citation verification: classify + check cites against the corpus/format (CourtListener optional for cases)
 - `query.py` — one-shot CLI
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
 - `test_subk.py` — 40 checks
@@ -119,6 +120,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
   (skips without `DATABASE_URL`; needs psycopg)
 - `test_hybrid.py` — hybrid (dense + lexical) retrieval checks, offline and deterministic
 - `test_enrich.py` — proves the enrichment gate: drafts are not citable until an attorney promotes them
+- `test_cite_verify.py` — proves the citation gate: corpus-backed vs well-formed vs unrecognized cites
 - `schema.sql` — production Postgres DDL the SQLite store mirrors
 
 ## Extending

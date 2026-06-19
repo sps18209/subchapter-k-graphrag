@@ -150,8 +150,14 @@ the thing to be careful with is turning the *query embedder* to `openai`.
   carries the tenant. `test_auth.py` covers it. Still to wire for full production: a
   per-organization *authorization* policy (the org claim is captured; enforce it per route)
   and per-principal rate limiting at the gateway. Set up an IdP to get the issuer/audience.
-- **Citation verification** — gate outputs through your citation verifier
-  (CourtListener / official sources). Never emit an unverified cite as good law.
+- **Citation verification — ✅ structural gate implemented.** `python/cite_verify.py`
+  classifies a citation (statute / reg / ruling / case / public law / FR) and grades it:
+  `in_corpus` (attorney-curated), `well_formed` (valid format, verify against source),
+  or `unrecognized` (likely error). It runs over every model draft in `enrich.py`
+  (`cite_check`), so a hallucinated cite is flagged before promotion; `test_cite_verify.py`
+  covers it. Still to wire for full coverage: online existence checks per source —
+  CourtListener for cases (`SUBK_CITE_PROVIDER=courtlistener`, hooked), and eCFR / govinfo /
+  IRB for regs / statutes / rulings.
 - **Confidentiality (Rule 1.6)** — `/ask` and `/compute` inputs and audit rows can carry
   matter facts. Encrypt at rest and in transit, restrict access, set a retention policy,
   and use no-train / zero-data-retention settings on any LLM calls.
