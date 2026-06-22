@@ -34,6 +34,9 @@ def main():
           a._rules_route("compute the ending basis, losses were 125000")["tool"] == "compute")
     check("date inside a question is carried as as_of",
           a._rules_route("what changed by 2026-06-01")["args"]["as_of"] == "2026-06-01")
+    sr = a._rules_route("what does Treas. Reg. 1.704-2 say")
+    check("'what does X say' -> source with the full citation",
+          sr["tool"] == "source" and sr["args"]["citation"] == "Treas. Reg. 1.704-2")
 
     print("the engine produces the answer (router only routes):")
     ask_out = a.run(con, {"tool": "ask", "args": {"question": "what feeds outside basis"}}, interactive=False)

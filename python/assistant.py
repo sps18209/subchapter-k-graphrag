@@ -43,9 +43,12 @@ TOOLS = """Tools (return JSON {"tool": <name>, "args": {...}}):
 - hubs       args {}                                                 — list the defined terms
 - hub        args {"name": str}                                      — one term's formula + authority
 - cite       args {"citation": str}                                  — check whether a citation is real/in-corpus
+- source     args {"citation": str}                                  — fetch the ACTUAL current text of a reg/statute/ruling from the primary source
 Pick exactly one tool. Extract dollar amounts and dates. Use COMPUTE ONLY when the user
 gives or clearly wants a basis CALCULATION (there are dollar figures, or words like
 compute/calculate/figure). A "what/which/why/how does ... work" question is ASK, not compute.
+Use SOURCE when the user wants to READ or QUOTE the authority itself ("what does X say",
+"pull up the text of X", "show me the language of X"); use CITE only to check if it's real.
 
 Examples:
   "what feeds a partner's outside basis?"            -> {"tool":"ask","args":{"question":"what feeds a partner's outside basis?"}}
@@ -53,7 +56,9 @@ Examples:
   "compute my basis: started 245k, distributed 465k" -> {"tool":"compute","args":{"beginning_basis":245000,"cash_distributed":465000}}
   "how much basis is left if beginning 100k loss 50k"-> {"tool":"compute","args":{"beginning_basis":100000,"losses":50000}}
   "what's in force as of 2026-06-01?"                -> {"tool":"verify","args":{"as_of":"2026-06-01"}}
-  "is IRC 9999 a real cite?"                         -> {"tool":"cite","args":{"citation":"IRC 9999"}}"""
+  "is IRC 9999 a real cite?"                         -> {"tool":"cite","args":{"citation":"IRC 9999"}}
+  "what does Treas. Reg. 1.704-2 actually say?"      -> {"tool":"source","args":{"citation":"Treas. Reg. 1.704-2"}}
+  "pull up the text of IRC 704"                      -> {"tool":"source","args":{"citation":"IRC 704"}}"""
 
 
 # ---- routers ------------------------------------------------------------------
@@ -70,6 +75,15 @@ def _rules_route(text: str) -> dict:
         return {"tool": "hubs", "args": {}}
     if cite and re.search(r"\b(real|exist|valid|check|verify)\b", t):
         return {"tool": "cite", "args": {"citation": text[cite.start():].strip()}}
+    if re.search(r"\b(text of|language of|quote|full text|actual text|pull up|read me|show me)\b", t) \
+            or re.search(r"what does .{0,40}\b(say|provide|state|require)\b", t):
+        found = cite_verify.extract_citations(text)
+        if not found:
+            sec = re.search(r"\bsection\s+(\d+[A-Za-z\-.]*)", text, re.I)
+            if sec:
+                found = ["IRC " + sec.group(1)]
+        if found:
+            return {"tool": "source", "args": {"citation": found[0]}}
     return {"tool": "ask", "args": {"question": text, "as_of": d.group(1) if d else None}}
 
 
@@ -148,6 +162,28 @@ def _fmt_currency(rep: dict) -> str:
     return "\n".join(out)
 
 
+def _render_source(citation: str, max_chars: int = 900) -> str:
+    """Fetch and show the actual current text of an authority from its primary source."""
+    citation = (citation or "").strip()
+    if not citation:
+        return "Tell me which authority to pull up, e.g. `text of Treas. Reg. 1.704-2`."
+    hit = cite_verify.OnlineVerifier().text(citation)   # source lookup is inherently online
+    if not hit:
+        return f"Couldn't fetch a primary source for '{citation}'. Check the citation format."
+    head = f"{citation} — {hit['source']}"
+    if hit.get("as_of"):
+        head += f", current as of {hit['as_of']}"
+    if hit.get("last_amended"):
+        head += f", last amended {hit['last_amended']}"
+    body = (hit.get("text") or "").strip()
+    if not body:
+        return (f"{head}\n  Full text isn't cleanly extractable here — read the authoritative "
+                f"source:\n  {hit.get('url', '')}")
+    excerpt = body[:max_chars]
+    tail = "" if len(body) <= max_chars else "\n  … [excerpt — full current text at the link above]"
+    return f"{head}\n  {hit.get('url', '')}\n\n{excerpt}{tail}"
+
+
 def run(con, intent: dict, interactive: bool = True) -> str:
     tool = intent.get("tool", "ask")
     args = intent.get("args") or {}
@@ -187,6 +223,8 @@ def run(con, intent: dict, interactive: bool = True) -> str:
             line += f" — {v['source']}"
         if v.get("as_of"):
             line += f", current as of {v['as_of']}"
+        if v.get("last_amended"):
+            line += f", last amended {v['last_amended']}"
         if v.get("url"):
             line += f"\n  {v['url']}"
         if v.get("note"):
@@ -196,9 +234,13 @@ def run(con, intent: dict, interactive: bool = True) -> str:
             line += f"\n  live source check: {live['status']} via {live.get('source')}"
             if live.get("as_of"):
                 line += f" (current as of {live['as_of']})"
+            if live.get("last_amended"):
+                line += f", last amended {live['last_amended']}"
             if live.get("url"):
                 line += f"\n    {live['url']}"
         return line
+    if tool == "source":
+        return _render_source(args.get("citation", ""))
     # ask (default)
     q = args.get("question") or args.get("text") or ""
     return retrieve.assemble(con, retrieve.retrieve(con, q, as_of=args.get("as_of")))
@@ -214,6 +256,7 @@ Type in plain English. The model picks the query; the engine gives the answer.
   CHECK if law is current →  is the QBI deduction in force in 2030?
   COMPUTE outside basis   →  compute: started 245k, distributed 465k
   VERIFY a citation       →  is IRC 9999 a real cite?
+  READ the actual law     →  what does Treas. Reg. 1.704-2 say?
   BROWSE the terms        →  list the terms   ·   explain disguised sale
 
 Tips

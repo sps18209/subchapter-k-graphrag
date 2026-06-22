@@ -108,7 +108,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `retrieve.py` — Layer 3 retrieval (BM25 + optional dense fusion + expansion + rerank + currency + routing)
 - `embeddings.py` — pluggable embedders (hashing offline stand-in / OpenAI) + the dense index for hybrid retrieval
 - `enrich.py` — gated Layer-2 enrichment: an LLM (stub/OpenAI) drafts glosses; an attorney promotes them (the only writer)
-- `cite_verify.py` — citation verification: classify + check against corpus/format (offline), plus optional live primary-source lookup (eCFR / US Code / Federal Register / IRS rulings / CourtListener — only cases need a key) via `SUBK_CITE_PROVIDER=online`
+- `cite_verify.py` — citation verification: classify + check against corpus/format (offline), plus optional live primary-source lookup (eCFR / US Code / Federal Register / IRS rulings / CourtListener — only cases need a key) via `SUBK_CITE_PROVIDER=online`; reports the section's last-amended date, and `--source` fetches the actual current text from the primary source
 - `query.py` — one-shot CLI
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
 - `assistant.py` — plain-English front door: routes natural language to the right tool (rules / local Ollama model / OpenAI); the engine still produces every answer

@@ -44,6 +44,8 @@ def main():
     found = cv.extract_citations("Under IRC 752(a) and Rev. Rul. 2024-14, but cf. Notice 2025-28.")
     check("pulls statute / ruling / notice from text",
           {"IRC 752(a)", "Rev. Rul. 2024-14", "Notice 2025-28"} <= set(found))
+    check("keeps the full reg suffix (1.704-2, not truncated to 1.704)",
+          "Treas. Reg. 1.704-2" in cv.extract_citations("see Treas. Reg. 1.704-2 generally"))
 
     print("the enrichment gate catches a fabricated cite:")
     class BadEnricher:

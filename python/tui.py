@@ -25,6 +25,7 @@ from datetime import date
 import graph
 import retrieve
 import calculator as calc
+import cite_verify
 
 # ---- tiny ANSI helper (no dependency; off for pipes / NO_COLOR) -------------
 _USE_COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
@@ -43,6 +44,8 @@ _COMMANDS = [
     ("ask <question>", "authority neighborhood (or just type the question)"),
     ("asof <YYYY-MM-DD>", "set the 'as of' date for the currency gate"),
     ("verify [date]", "what's in force / superseded on a date"),
+    ("cite <citation>", "check a citation vs corpus + live primary source"),
+    ("source <citation>", "fetch the ACTUAL current text from eCFR / US Code / IRS"),
     ("compute [json]", "deterministic outside-basis calculator"),
     ("hubs", "list the defined terms"),
     ("hub <id>", "a term's formula DAG + connected authority"),
@@ -142,6 +145,58 @@ class SubKShell(cmd.Cmd):
                 print("  " + color(label + ":"))
                 for cite, why in rows:
                     print(f"    {cite:<26} " + DIM(why))
+
+    def do_cite(self, arg):
+        "cite <citation> — verify a citation vs the corpus and the live primary source"
+        c = arg.strip()
+        if not c:
+            print(RE("  give a citation: cite Treas. Reg. 1.704-2"))
+            return
+        v = cite_verify.verify(c, cite_verify.corpus_cites(self.con), cite_verify.OnlineVerifier())
+        head = f"{v['citation']}: {BOLD(v['status'])} ({v['kind']})"
+        if v.get("source"):
+            head += f" — {v['source']}"
+        if v.get("as_of"):
+            head += f", current as of {v['as_of']}"
+        if v.get("last_amended"):
+            head += f", last amended {v['last_amended']}"
+        print("  " + head)
+        if v.get("url"):
+            print("    " + DIM(v["url"]))
+        if v.get("note"):
+            print("    " + DIM(v["note"]))
+        live = v.get("live")
+        if live:
+            extra = f"live source: {live['status']} via {live.get('source')}"
+            if live.get("as_of"):
+                extra += f" (as of {live['as_of']}"
+                extra += f", last amended {live['last_amended']})" if live.get("last_amended") else ")"
+            print("    " + DIM(extra))
+
+    def do_source(self, arg):
+        "source <citation> — fetch the ACTUAL current text from the primary source (eCFR/US Code/IRS)"
+        c = arg.strip()
+        if not c:
+            print(RE("  give a citation: source Treas. Reg. 1.704-2"))
+            return
+        hit = cite_verify.OnlineVerifier().text(c)
+        if not hit:
+            print(RE(f"  couldn't fetch a primary source for '{c}'"))
+            return
+        head = f"{c} — {hit['source']}"
+        if hit.get("as_of"):
+            head += f", current as of {hit['as_of']}"
+        if hit.get("last_amended"):
+            head += f", last amended {hit['last_amended']}"
+        print(BOLD("  " + head))
+        if hit.get("url"):
+            print("  " + DIM(hit["url"]))
+        body = (hit.get("text") or "").strip()
+        if body:
+            print()
+            print(body[:1200] + (DIM("\n  … [excerpt — full current text at the link]") if len(body) > 1200 else ""))
+        else:
+            print("  " + DIM("full text isn't cleanly extractable here — read it at the link above"))
 
     def do_compute(self, arg):
         "compute [json] — deterministic outside-basis engine; no arg = interactive prompts"

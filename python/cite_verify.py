@@ -41,10 +41,12 @@ _PATTERNS = [
 # Loose extractor: pull structured citations out of prose (for checking model drafts).
 _EXTRACT = re.compile(
     r"IRC\s*§?\s*\d+[A-Za-z]?(?:\([^)]+\))*"
-    r"|(?:Prop\.?\s*)?Treas\.?\s*Reg\.?\s*[\d.]+(?:\([^)]+\))*"
-    r"|Rev\.?\s*Rul\.?\s*\d{4}-\d+"
-    r"|Rev\.?\s*Proc\.?\s*\d{4}-\d+"
-    r"|Notice\s*\d{4}-\d+"
+    r"|(?:Prop\.?\s*)?Treas\.?\s*Reg\.?\s*\d[\dA-Za-z.\-]*(?:\([^)]+\))*"   # 1.704-2, 1.6011-18, 1.56A-5
+    r"|\d+\s*CFR\s*\d[\dA-Za-z.\-]*(?:\([^)]+\))*"
+    r"|Rev\.?\s*Rul\.?\s*\d{2,4}-\d+"
+    r"|Rev\.?\s*Proc\.?\s*\d{2,4}-\d+"
+    r"|Notice\s*\d{2,4}-\d+"
+    r"|Announcement\s*\d{2,4}-\d+"
     r"|P\.?L\.?\s*\d+-\d+"
     r"|\d+\s*FR\s*\d+"
     r"|T\.?D\.?\s*\d+",
@@ -172,8 +174,61 @@ class OnlineVerifier:
         url = (f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-26.xml"
                f"?part={part}&section={section}")
         ok = self._status(url) == 200
-        return {"status": "verified_external" if ok else "not_found", "source": "eCFR",
-                "as_of": date, "url": f"https://www.ecfr.gov/current/title-26/section-{section}"}
+        out = {"status": "verified_external" if ok else "not_found", "source": "eCFR",
+               "as_of": date, "url": f"https://www.ecfr.gov/current/title-26/section-{section}"}
+        if ok:
+            last, n = self._ecfr_amended(part, section)
+            if last:
+                out["last_amended"] = last
+                out["revisions"] = n
+        return out
+
+    def _ecfr_amended(self, part: str, section: str):
+        """Most-recent amendment date + revision count for a CFR section (eCFR tracks since ~2017)."""
+        try:
+            d = self._json("https://www.ecfr.gov/api/versioner/v1/versions/title-26.json"
+                           f"?part={part}&section={section}")
+            dates = sorted({v["date"] for v in d.get("content_versions", [])})
+            if dates:
+                return dates[-1], len(dates)
+        except Exception:
+            pass
+        return None, 0
+
+    def text(self, citation: str, kind: str | None = None):
+        """Fetch the CURRENT primary text of an authority (regs, via eCFR) or an authoritative
+        link (statutes -> US Code, rulings -> IRS PDF). Returns {source,url,text,as_of?,
+        last_amended?} or None. 'text' is '' when the source isn't cleanly extractable here."""
+        kind = kind or classify(citation)
+        try:
+            if kind == "regulation":
+                m = re.search(r"\d+\.[\dA-Za-z.\-]+", citation)
+                if not m:
+                    return None
+                section = m.group(0)
+                part = section.split(".")[0]
+                date = self._ecfr_asof()
+                api = (f"https://www.ecfr.gov/api/versioner/v1/full/{date}/title-26.xml"
+                       f"?part={part}&section={section}")
+                req = urllib.request.Request(api, headers={"User-Agent": _UA})
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    raw = r.read().decode("utf-8", "replace")
+                txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw)).strip()
+                last, _ = self._ecfr_amended(part, section)
+                return {"source": "eCFR", "as_of": date, "last_amended": last, "text": txt,
+                        "url": f"https://www.ecfr.gov/current/title-26/section-{section}"}
+            if kind == "statute":
+                m = re.search(r"\d+", citation)
+                sec = m.group(0) if m else ""
+                return {"source": "US Code (Cornell LII)", "text": "",
+                        "url": f"https://www.law.cornell.edu/uscode/text/26/{sec}"}
+            if kind == "ruling":
+                hit = self._irs_drop(citation)
+                if hit:
+                    return {"source": hit["source"], "text": "", "url": hit.get("url", "")}
+        except Exception:
+            return None
+        return None
 
     def _uscode(self, citation: str):
         m = re.search(r"\d+", citation)   # IRC 704(d) -> 704
@@ -247,16 +302,27 @@ def corpus_cites(con) -> set:
 if __name__ == "__main__":
     import argparse
     import graph
-    ap = argparse.ArgumentParser(description="Verify legal citations against the corpus + format")
+    ap = argparse.ArgumentParser(description="Verify legal citations against the corpus + primary sources")
     ap.add_argument("citation", nargs="?")
     ap.add_argument("--text", help="extract and verify every citation found in this text")
+    ap.add_argument("--source", action="store_true",
+                    help="fetch the ACTUAL current text of CITATION from its primary source")
     args = ap.parse_args()
     con = graph.build(":memory:")
     cites = corpus_cites(con)
     prov = get_verifier()
-    if args.text:
+    if args.source:
+        if not args.citation:
+            ap.error("give a CITATION with --source")
+        hit = OnlineVerifier().text(args.citation)
+        if not hit:
+            ap.error(f"no primary source found for {args.citation!r}")
+        if hit.get("text") and len(hit["text"]) > 2000:
+            hit = {**hit, "text": hit["text"][:2000] + " … [truncated]"}
+        print(json.dumps(hit, indent=2))
+    elif args.text:
         print(json.dumps(verify_text(args.text, cites, prov), indent=2))
     elif args.citation:
         print(json.dumps(verify(args.citation, cites, prov), indent=2))
     else:
-        ap.error("give a citation or --text")
+        ap.error("give a citation, --text, or --source")
