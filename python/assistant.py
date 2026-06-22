@@ -73,12 +73,14 @@ def _rules_route(text: str) -> dict:
     return {"tool": "ask", "args": {"question": text, "as_of": d.group(1) if d else None}}
 
 
-def _chat(provider: str, system: str, user: str) -> str:
+def _chat(provider: str, system: str, user: str, json_mode: bool = True) -> str:
     if provider == "ollama":
         url = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat"
         payload = {"model": os.environ.get("SUBK_ASSISTANT_MODEL", "llama3.2:3b"),
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                   "format": "json", "stream": False, "options": {"temperature": 0}}
+                   "stream": False, "options": {"temperature": 0}}
+        if json_mode:
+            payload["format"] = "json"
         req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -89,8 +91,9 @@ def _chat(provider: str, system: str, user: str) -> str:
             raise RuntimeError("OPENAI_API_KEY not set")
         url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/") + "/chat/completions"
         payload = {"model": os.environ.get("SUBK_ASSISTANT_MODEL", "gpt-4o-mini"), "temperature": 0,
-                   "response_format": {"type": "json_object"},
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                      headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -188,13 +191,39 @@ def run(con, intent: dict, interactive: bool = True) -> str:
 DISCLAIMER = "Unverified seed for attorney review — not legal or tax advice."
 
 
+def _explain(provider: str, question: str, result: str) -> str:
+    """Plain-English restatement of the engine's output. The model summarizes ONLY what the
+    engine returned — it adds no law, cites, or numbers — so the verified detail below stays
+    the source of truth. Returns '' on any failure (then only the technical output is shown)."""
+    system = ("You restate a partnership-tax tool's output in plain English for a non-lawyer. "
+              "Summarize ONLY what is in RESULT, in 2-3 short sentences. Do NOT add citations, "
+              "numbers, dates, or legal conclusions that are not present in RESULT. No preamble.")
+    try:
+        return _chat(provider, system, f"QUESTION: {question}\n\nRESULT:\n{result}", json_mode=False).strip()
+    except Exception:
+        return ""
+
+
+def respond(con, text: str, provider: str | None, interactive: bool = True) -> str:
+    """Always route through the engine; when a model is configured (and SUBK_ASSISTANT_EXPLAIN
+    isn't 0), prepend a plain-English summary above the verified engine output."""
+    detail = run(con, route(text, provider), interactive=interactive)
+    if provider and provider != "none" and os.environ.get("SUBK_ASSISTANT_EXPLAIN", "1") != "0":
+        summary = _explain(provider, text, detail)
+        if summary:
+            return ("PLAIN ENGLISH (model summary — the verified detail is below):\n  "
+                    + summary.replace("\n", "\n  ")
+                    + "\n\nVERIFIED DETAIL (from the deterministic engine):\n" + detail)
+    return detail
+
+
 def main():
     provider = os.environ.get("SUBK_ASSISTANT_PROVIDER")
     con = graph.build(":memory:")
     one_shot = " ".join(sys.argv[1:]).strip()
     mode = provider if provider and provider != "none" else "rules (no model)"
     if one_shot:
-        print(run(con, route(one_shot, provider), interactive=False))
+        print(respond(con, one_shot, provider, interactive=False))
         print("\n" + DISCLAIMER)
         return
     print(f"Subchapter K assistant — ask in plain English. Routing: {mode}. Type 'quit' to exit.")
@@ -209,7 +238,7 @@ def main():
             continue
         if text.lower() in ("quit", "exit", "q"):
             break
-        print(run(con, route(text, provider)))
+        print(respond(con, text, provider))
         print()
 
 
