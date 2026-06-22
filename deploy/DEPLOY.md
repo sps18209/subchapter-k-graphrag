@@ -156,11 +156,13 @@ the thing to be careful with is turning the *query embedder* to `openai`.
   error) — always, offline. With `SUBK_CITE_PROVIDER=online` it also checks the cite against
   the **authoritative primary source for its type**: regulations → **eCFR** (which also
   reports the "up to date as of" date), statutes/IRC → **US Code** (Cornell LII), `X FR Y` →
-  **Federal Register**, cases → **CourtListener** (needs a free `COURTLISTENER_TOKEN`; the
-  others need no key). Network failures fall back to the offline verdict. It runs over every
-  model draft in `enrich.py` (`cite_check`), so a hallucinated or removed cite is caught
-  before promotion; `test_cite_verify.py` covers the offline path. Remaining gap: IRS
-  rulings / IRB notices have no clean API — best-effort / manual for now.
+  **Federal Register**, Rev. Rul./Rev. Proc./Notice → **IRS** (irs.gov recent-guidance
+  folder), cases → **CourtListener** (the only type needing a key — a free
+  `COURTLISTENER_TOKEN`; everything else needs none). Network failures fall back to the
+  offline verdict. It runs over every model draft in `enrich.py` (`cite_check`), so a
+  hallucinated or removed cite is caught before promotion; `test_cite_verify.py` covers the
+  offline path. Known limit: the IRS drop folder holds recent guidance, so a pre-2000s
+  ruling reports "not in recent folder — check the IRB archive" rather than a false negative.
 - **Confidentiality (Rule 1.6)** — `/ask` and `/compute` inputs and audit rows can carry
   matter facts. Encrypt at rest and in transit, restrict access, set a retention policy,
   and use no-train / zero-data-retention settings on any LLM calls.

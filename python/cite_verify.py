@@ -98,15 +98,19 @@ def verify_text(text: str, corpus_cites: set, provider=None) -> list[dict]:
     return [verify(c, corpus_cites, provider) for c in extract_citations(text)]
 
 
+_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"  # gov sites reject the default urllib UA
+
+
 class OnlineVerifier:
     """Verify a citation against the AUTHORITATIVE primary source for its type:
       regulation       -> eCFR (ecfr.gov, official, reports an 'up to date as of' date)
       statute (IRC)    -> US Code (Cornell LII)
       federal_register -> federalregister.gov
+      ruling           -> IRS drop folder (Rev. Rul. / Rev. Proc. / Notice / Announcement PDFs)
       case             -> CourtListener (needs a free COURTLISTENER_TOKEN)
     .check(citation, kind) returns a verdict dict (status/source/url/...) or None when no
-    online source applies (e.g. IRS rulings have no clean API). Network failures -> None,
-    so the offline structural check still stands. All lookups are read-only existence checks.
+    online source applies. Network failures -> None, so the offline structural check still
+    stands. All lookups are read-only existence checks.
     """
     name = "online"
 
@@ -123,6 +127,8 @@ class OnlineVerifier:
                 return self._uscode(citation)
             if kind == "federal_register":
                 return self._fedreg(citation)
+            if kind == "ruling":               # Rev. Rul. / Rev. Proc. / Notice / Announcement
+                return self._irs_drop(citation)
             if kind == "case":
                 return self._courtlistener(citation)
         except Exception:
@@ -132,7 +138,8 @@ class OnlineVerifier:
     # -- helpers --
     def _status(self, url: str) -> int:
         try:
-            with urllib.request.urlopen(url, timeout=self.timeout) as r:
+            req = urllib.request.Request(url, headers={"User-Agent": _UA})
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
                 return r.status
         except urllib.error.HTTPError as e:
             return e.code
@@ -140,7 +147,8 @@ class OnlineVerifier:
             return 0
 
     def _json(self, url: str):
-        with urllib.request.urlopen(url, timeout=self.timeout) as r:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return json.loads(r.read())
 
     # -- per-source checks --
@@ -185,6 +193,29 @@ class OnlineVerifier:
             return {"status": "verified_external", "source": "Federal Register",
                     "url": (d.get("results") or [{}])[0].get("html_url", "")}
         return {"status": "not_found", "source": "Federal Register"}
+
+    # IRS guidance (Rev. Rul. / Rev. Proc. / Notice / Announcement) publishes as a PDF in the
+    # irs.gov "drop" folder with a predictable name, e.g. Rev. Rul. 2024-14 -> rr-24-14.pdf,
+    # Notice 2026-7 -> n-26-07.pdf. The drop folder holds recent guidance; older items (pre-2000s)
+    # live in the IRB archive and 404 here, so a 404 is "not in the recent folder", not "fake".
+    _IRS_PREFIX = (("revrul", "rr"), ("revproc", "rp"), ("notice", "n"), ("announcement", "a"), ("ann", "a"))
+
+    def _irs_drop(self, citation: str):
+        m = re.search(r"(rev\.?\s*rul\.?|rev\.?\s*proc\.?|notice|announcement|ann\.?)\s*(\d{2,4})-0*(\d+)",
+                      citation, re.I)
+        if not m:
+            return None
+        key = re.sub(r"[.\s]", "", m.group(1)).lower()
+        prefix = next((p for k, p in self._IRS_PREFIX if key.startswith(k)), None)
+        if not prefix:
+            return None
+        year, num = m.group(2)[-2:], f"{int(m.group(3)):02d}"
+        url = f"https://www.irs.gov/pub/irs-drop/{prefix}-{year}-{num}.pdf"
+        if self._status(url) == 200:
+            return {"status": "verified_external", "source": "IRS (irs.gov)", "url": url}
+        return {"status": "not_found", "source": "IRS (irs.gov)", "url": url,
+                "note": "not in the IRS recent-guidance folder; older rulings are in the IRB "
+                        "archive — verify manually"}
 
     def _courtlistener(self, citation: str):
         if not self.cl_token:
