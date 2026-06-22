@@ -111,6 +111,8 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `cite_verify.py` — citation verification: classify + check cites against the corpus/format (CourtListener optional for cases)
 - `query.py` — one-shot CLI
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
+- `assistant.py` — plain-English front door: routes natural language to the right tool (rules / local Ollama model / OpenAI); the engine still produces every answer
+- `test_assistant.py` — proves NL routing + that the engine (not the router) answers
 - `test_subk.py` — 40 checks
 - `parity_test.py` — 640 cross-language checks proving `web-src/engine.js` matches this
   engine on retrieval, computation, currency, DAGs, and the applicability gate (runs the
