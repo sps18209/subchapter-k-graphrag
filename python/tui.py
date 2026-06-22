@@ -39,25 +39,49 @@ def RE(s):   return _c("31", s)
 
 TIER = {1: "statute", 3: "regulation", 4: "ruling/notice", 5: "form/program"}
 
+_COMMANDS = [
+    ("ask <question>", "authority neighborhood (or just type the question)"),
+    ("asof <YYYY-MM-DD>", "set the 'as of' date for the currency gate"),
+    ("verify [date]", "what's in force / superseded on a date"),
+    ("compute [json]", "deterministic outside-basis calculator"),
+    ("hubs", "list the defined terms"),
+    ("hub <id>", "a term's formula DAG + connected authority"),
+    ("node <id>", "raw node + its edges"),
+    ("help", "show this map  (help <cmd> for one command)"),
+    ("quit / exit", "leave"),
+]
+
+
+def command_map() -> str:
+    line = "=" * 66
+    out = [CY(line), BOLD("  subk shell — commands  (just type a question to ask)"), ""]
+    for name, desc in _COMMANDS:
+        out.append("  " + GR(f"{name:<20}") + DIM(desc))
+    out += [CY(line)]
+    return "\n".join(out)
+
 
 class SubKShell(cmd.Cmd):
-    intro = "\n".join([
-        BOLD("Subchapter K · GraphRAG — interactive terminal UI"),
-        DIM("Pure stdlib over the same engine as the CLI and web demo."),
-        "Commands: " + CY("ask asof verify compute hubs hub node help quit"),
-        DIM("Tip: just type a question (no `ask` needed). Set a date with `asof 2026-06-01`."),
-        YE("Everything here is UNVERIFIED SEED for attorney review — not legal or tax advice."),
-        "",
-    ])
-
     def __init__(self):
         super().__init__()
         self.con = graph.build(":memory:")
         self.as_of: str | None = None
         nn = self.con.execute("SELECT COUNT(*) FROM node").fetchone()[0]
         ne = self.con.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
-        self.intro += DIM(f"graph: {nn} nodes, {ne} edges\n")
+        self.intro = "\n".join([
+            BOLD("Subchapter K · GraphRAG — interactive terminal UI"),
+            command_map(),
+            DIM(f"graph: {nn} nodes, {ne} edges  ·  set a date with `asof 2026-06-01`"),
+            YE("UNVERIFIED SEED for attorney review — not legal or tax advice."),
+            "",
+        ])
         self._set_prompt()
+
+    def do_help(self, arg):
+        "help — show the command map; `help <command>` for one command's detail"
+        if arg:
+            return super().do_help(arg)
+        print(command_map())
 
     def _set_prompt(self):
         self.prompt = CY(f"subk[{self.as_of or 'no date'}]> ")

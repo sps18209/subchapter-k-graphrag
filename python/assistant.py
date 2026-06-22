@@ -190,6 +190,25 @@ def run(con, intent: dict, interactive: bool = True) -> str:
 
 DISCLAIMER = "Unverified seed for attorney review — not legal or tax advice."
 
+HELP = """\
+══════════════════════ subk-chat — what you can do ══════════════════════
+Type in plain English. The model picks the query; the engine gives the answer.
+
+  ASK about authority     →  what feeds a partner's outside basis?
+  CHECK if law is current →  is the QBI deduction in force in 2030?
+  COMPUTE outside basis   →  compute: started 245k, distributed 465k
+  VERIFY a citation       →  is IRC 9999 a real cite?
+  BROWSE the terms        →  list the terms   ·   explain disguised sale
+
+Tips
+  • say "compute" or include $ amounts to force the calculator
+  • include a date like 2026-06-01 for "as of" currency questions
+  • answers show a plain-English summary + the verified engine detail
+
+Commands
+  help  ?   show this map      quit  exit  q   leave
+═════════════════════════════════════════════════════════════════════════"""
+
 
 def _explain(provider: str, question: str, result: str) -> str:
     """Plain-English restatement of the engine's output. The model summarizes ONLY what the
@@ -226,8 +245,8 @@ def main():
         print(respond(con, one_shot, provider, interactive=False))
         print("\n" + DISCLAIMER)
         return
-    print(f"Subchapter K assistant — ask in plain English. Routing: {mode}. Type 'quit' to exit.")
-    print(DISCLAIMER + "\n")
+    print(HELP)
+    print(f"\nRouting: {mode}.  {DISCLAIMER}\n")
     while True:
         try:
             text = input("you> ").strip()
@@ -238,6 +257,9 @@ def main():
             continue
         if text.lower() in ("quit", "exit", "q"):
             break
+        if text.lower() in ("help", "?", "menu", "commands", "map"):
+            print(HELP)
+            continue
         print(respond(con, text, provider))
         print()
 
