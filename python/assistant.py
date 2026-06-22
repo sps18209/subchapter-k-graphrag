@@ -43,7 +43,17 @@ TOOLS = """Tools (return JSON {"tool": <name>, "args": {...}}):
 - hubs       args {}                                                 — list the defined terms
 - hub        args {"name": str}                                      — one term's formula + authority
 - cite       args {"citation": str}                                  — check whether a citation is real/in-corpus
-Pick exactly one tool. Extract dollar amounts and dates. If it's a general question, use ask."""
+Pick exactly one tool. Extract dollar amounts and dates. Use COMPUTE ONLY when the user
+gives or clearly wants a basis CALCULATION (there are dollar figures, or words like
+compute/calculate/figure). A "what/which/why/how does ... work" question is ASK, not compute.
+
+Examples:
+  "what feeds a partner's outside basis?"            -> {"tool":"ask","args":{"question":"what feeds a partner's outside basis?"}}
+  "explain disguised sales"                          -> {"tool":"ask","args":{"question":"explain disguised sales"}}
+  "compute my basis: started 245k, distributed 465k" -> {"tool":"compute","args":{"beginning_basis":245000,"cash_distributed":465000}}
+  "how much basis is left if beginning 100k loss 50k"-> {"tool":"compute","args":{"beginning_basis":100000,"losses":50000}}
+  "what's in force as of 2026-06-01?"                -> {"tool":"verify","args":{"as_of":"2026-06-01"}}
+  "is IRC 9999 a real cite?"                         -> {"tool":"cite","args":{"citation":"IRC 9999"}}"""
 
 
 # ---- routers ------------------------------------------------------------------
@@ -99,12 +109,27 @@ def parse_intent(raw: str) -> dict | None:
     return None
 
 
+# prefix match (no trailing \b) so "compute"/"calculate"/"figuring" all hit
+_COMPUTE_VERB = re.compile(r"\b(comput|calculat|figur|work out|run the number|how much|ending basis)", re.I)
+
+
+def _guard(intent: dict, text: str) -> dict:
+    """Correct the small model's most common mis-route: sending an explanation question
+    to the calculator. Compute needs numbers or an explicit 'compute/calculate' ask —
+    otherwise it's a question, so route to ask."""
+    if intent.get("tool") == "compute":
+        has_numbers = any(v for v in (intent.get("args") or {}).values())
+        if not has_numbers and not re.search(r"\d", text) and not _COMPUTE_VERB.search(text):
+            return {"tool": "ask", "args": {"question": text}}
+    return intent
+
+
 def route(text: str, provider: str | None) -> dict:
     if not provider or provider == "none":
         return _rules_route(text)
     try:
         intent = parse_intent(_chat(provider, "You are a precise tool router. " + TOOLS, text))
-        return intent or _rules_route(text)
+        return _guard(intent or _rules_route(text), text)
     except Exception as e:
         sys.stderr.write(f"[router fell back to rules: {e}]\n")
         return _rules_route(text)
