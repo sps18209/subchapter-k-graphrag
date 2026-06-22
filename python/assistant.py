@@ -252,6 +252,12 @@ def respond(con, text: str, provider: str | None, interactive: bool = True) -> s
     return detail
 
 
+def _set_title(name: str) -> None:
+    """Label the terminal tab/window (xterm / iTerm / Terminal.app). Set SUBK_TITLE to rename."""
+    sys.stdout.write(f"\033]0;{name}\007")
+    sys.stdout.flush()
+
+
 def main():
     provider = os.environ.get("SUBK_ASSISTANT_PROVIDER")
     con = graph.build(":memory:")
@@ -261,8 +267,10 @@ def main():
         print(respond(con, one_shot, provider, interactive=False))
         print("\n" + DISCLAIMER)
         return
+    _set_title(os.environ.get("SUBK_TITLE", "Subchapter K"))
     print(HELP)
-    print(f"\nRouting: {mode}.  {DISCLAIMER}\n")
+    print(f"\nRouting: {mode}.  {DISCLAIMER}")
+    print("Ask your first question below — plain English — or type `help` for the map.\n")
     while True:
         try:
             text = input("you> ").strip()

@@ -52,6 +52,12 @@ _COMMANDS = [
 ]
 
 
+def _set_title(name: str) -> None:
+    """Label the terminal tab/window (xterm / iTerm / Terminal.app). Set SUBK_TITLE to rename."""
+    sys.stdout.write(f"\033]0;{name}\007")
+    sys.stdout.flush()
+
+
 def command_map() -> str:
     line = "=" * 66
     out = [CY(line), BOLD("  subk shell — commands  (just type a question to ask)"), ""]
@@ -73,8 +79,10 @@ class SubKShell(cmd.Cmd):
             command_map(),
             DIM(f"graph: {nn} nodes, {ne} edges  ·  set a date with `asof 2026-06-01`"),
             YE("UNVERIFIED SEED for attorney review — not legal or tax advice."),
+            DIM("Type a question, or a command from the map above. `help` shows it again."),
             "",
         ])
+        _set_title(os.environ.get("SUBK_TITLE", "Subchapter K"))
         self._set_prompt()
 
     def do_help(self, arg):
