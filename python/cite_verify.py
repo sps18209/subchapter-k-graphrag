@@ -220,8 +220,10 @@ class OnlineVerifier:
             if kind == "statute":
                 m = re.search(r"\d+", citation)
                 sec = m.group(0) if m else ""
-                return {"source": "US Code (Cornell LII)", "text": "",
-                        "url": f"https://www.law.cornell.edu/uscode/text/26/{sec}"}
+                url = f"https://www.law.cornell.edu/uscode/text/26/{sec}"
+                body = self._uscode_text(sec)
+                return {"source": "US Code (Cornell LII)", "url": url,
+                        "text": body if len(body) >= 40 else ""}
             if kind == "ruling":
                 hit = self._irs_drop(citation)
                 if hit:
@@ -239,6 +241,20 @@ class OnlineVerifier:
         ok = self._status(url) == 200
         return {"status": "verified_external" if ok else "not_found",
                 "source": "US Code (Cornell LII)", "url": url}
+
+    def _uscode_text(self, section: str) -> str:
+        """Best-effort extraction of the section's statutory text from Cornell LII. Reliably
+        returns the clean opening language (long sections truncate at the first block) or ''."""
+        try:
+            req = urllib.request.Request(f"https://www.law.cornell.edu/uscode/text/26/{section}",
+                                         headers={"User-Agent": _UA})
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                html = r.read().decode("utf-8", "replace")
+            m = re.search(r"tab-pane[^>]*>(.*?)</div>\s*</div>", html, re.S)
+            seg = m.group(1) if m else ""
+            return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", seg)).strip()
+        except Exception:
+            return ""
 
     def _fedreg(self, citation: str):
         url = ("https://www.federalregister.gov/api/v1/documents.json?per_page=1"

@@ -262,34 +262,71 @@ Type in plain English. The model picks the query; the engine gives the answer.
 Tips
   • say "compute" or include $ amounts to force the calculator
   • include a date like 2026-06-01 for "as of" currency questions
-  • answers show a plain-English summary + the verified engine detail
+  • answers show a plain-English summary (grounded in live primary law) + verified detail
 
 Commands
   help  ?   show this map      quit  exit  q   leave
 ═════════════════════════════════════════════════════════════════════════"""
 
 
-def _explain(provider: str, question: str, result: str) -> str:
-    """Plain-English restatement of the engine's output. The model summarizes ONLY what the
-    engine returned — it adds no law, cites, or numbers — so the verified detail below stays
-    the source of truth. Returns '' on any failure (then only the technical output is shown)."""
-    system = ("You restate a partnership-tax tool's output in plain English for a non-lawyer. "
-              "Summarize ONLY what is in RESULT, in 2-3 short sentences. Do NOT add citations, "
-              "numbers, dates, or legal conclusions that are not present in RESULT. No preamble.")
+def _live_grounding(detail: str, k: int = 2, max_chars: int = 1100) -> str:
+    """Fetch the ACTUAL current text of the top authorities the engine cited, so the plain-English
+    summary is grounded in real primary law (eCFR regs / US Code statutes), not the model's memory.
+    Returns a context block (empty if nothing fetchable). Best-effort; network failures are skipped."""
+    v = cite_verify.OnlineVerifier()
+    blocks, used = [], 0
+    for c in cite_verify.extract_citations(detail):
+        if used >= k:
+            break
+        kind = cite_verify.classify(c)
+        if kind not in ("regulation", "statute"):   # rulings/cases have no clean live text
+            continue
+        try:
+            hit = v.text(c, kind)
+        except Exception:
+            hit = None
+        body = (hit or {}).get("text", "").strip()
+        if not body:
+            continue
+        stamp = f" (current as of {hit['as_of']})" if hit.get("as_of") else ""
+        blocks.append(f"[{c} — {hit['source']}{stamp}]\n{body[:max_chars]}")
+        used += 1
+    return "\n\n".join(blocks)
+
+
+def _explain(provider: str, question: str, result: str, grounding: str = "") -> str:
+    """Plain-English explanation of the engine's output. The model may use ONLY the engine RESULT
+    and the PRIMARY SOURCE TEXT (real current law fetched live) — never its own memory of the law —
+    so the verified detail below stays the source of truth. Returns '' on any failure."""
+    if grounding:
+        system = ("You explain a partnership-tax tool's output in plain English for a non-lawyer, "
+                  "grounded in the actual current law provided. Use ONLY the RESULT and the PRIMARY "
+                  "SOURCE TEXT (real, current statutory/regulatory language). Base your 2-4 sentence "
+                  "explanation on these materials only; you may paraphrase the source text, but do "
+                  "NOT add law, numbers, or conclusions not supported by them. No preamble.")
+        user = f"QUESTION: {question}\n\nRESULT:\n{result}\n\nPRIMARY SOURCE TEXT (authoritative):\n{grounding}"
+    else:
+        system = ("You restate a partnership-tax tool's output in plain English for a non-lawyer. "
+                  "Summarize ONLY what is in RESULT, in 2-3 short sentences. Do NOT add citations, "
+                  "numbers, dates, or legal conclusions that are not present in RESULT. No preamble.")
+        user = f"QUESTION: {question}\n\nRESULT:\n{result}"
     try:
-        return _chat(provider, system, f"QUESTION: {question}\n\nRESULT:\n{result}", json_mode=False).strip()
+        return _chat(provider, system, user, json_mode=False).strip()
     except Exception:
         return ""
 
 
 def respond(con, text: str, provider: str | None, interactive: bool = True) -> str:
     """Always route through the engine; when a model is configured (and SUBK_ASSISTANT_EXPLAIN
-    isn't 0), prepend a plain-English summary above the verified engine output."""
+    isn't 0), prepend a plain-English summary GROUNDED IN THE LIVE PRIMARY SOURCES the engine
+    cited. Disable grounding (faster, no network) with SUBK_EXPLAIN_GROUNDING=0."""
     detail = run(con, route(text, provider), interactive=interactive)
     if provider and provider != "none" and os.environ.get("SUBK_ASSISTANT_EXPLAIN", "1") != "0":
-        summary = _explain(provider, text, detail)
+        grounding = "" if os.environ.get("SUBK_EXPLAIN_GROUNDING", "1") == "0" else _live_grounding(detail)
+        summary = _explain(provider, text, detail, grounding)
         if summary:
-            return ("PLAIN ENGLISH (model summary — the verified detail is below):\n  "
+            tag = "grounded in live primary sources" if grounding else "model summary"
+            return (f"PLAIN ENGLISH ({tag} — the verified detail is below):\n  "
                     + summary.replace("\n", "\n  ")
                     + "\n\nVERIFIED DETAIL (from the deterministic engine):\n" + detail)
     return detail
