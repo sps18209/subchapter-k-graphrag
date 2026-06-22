@@ -182,7 +182,23 @@ def run(con, intent: dict, interactive: bool = True) -> str:
         return "\n".join(lines) if rows else f"{row[0]} (no formula DAG)."
     if tool == "cite":
         v = cite_verify.verify(args.get("citation", ""), cite_verify.corpus_cites(con), cite_verify.get_verifier())
-        return f"{v['citation']}: {v['status']} ({v['kind']}) — {v.get('note', v.get('source',''))}"
+        line = f"{v['citation']}: {v['status']} ({v['kind']})"
+        if v.get("source"):
+            line += f" — {v['source']}"
+        if v.get("as_of"):
+            line += f", current as of {v['as_of']}"
+        if v.get("url"):
+            line += f"\n  {v['url']}"
+        if v.get("note"):
+            line += f"\n  {v['note']}"
+        live = v.get("live")
+        if live:
+            line += f"\n  live source check: {live['status']} via {live.get('source')}"
+            if live.get("as_of"):
+                line += f" (current as of {live['as_of']})"
+            if live.get("url"):
+                line += f"\n    {live['url']}"
+        return line
     # ask (default)
     q = args.get("question") or args.get("text") or ""
     return retrieve.assemble(con, retrieve.retrieve(con, q, as_of=args.get("as_of")))

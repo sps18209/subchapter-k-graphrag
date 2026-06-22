@@ -150,14 +150,17 @@ the thing to be careful with is turning the *query embedder* to `openai`.
   carries the tenant. `test_auth.py` covers it. Still to wire for full production: a
   per-organization *authorization* policy (the org claim is captured; enforce it per route)
   and per-principal rate limiting at the gateway. Set up an IdP to get the issuer/audience.
-- **Citation verification — ✅ structural gate implemented.** `python/cite_verify.py`
+- **Citation verification — ✅ structural + live primary-source.** `python/cite_verify.py`
   classifies a citation (statute / reg / ruling / case / public law / FR) and grades it:
-  `in_corpus` (attorney-curated), `well_formed` (valid format, verify against source),
-  or `unrecognized` (likely error). It runs over every model draft in `enrich.py`
-  (`cite_check`), so a hallucinated cite is flagged before promotion; `test_cite_verify.py`
-  covers it. Still to wire for full coverage: online existence checks per source —
-  CourtListener for cases (`SUBK_CITE_PROVIDER=courtlistener`, hooked), and eCFR / govinfo /
-  IRB for regs / statutes / rulings.
+  `in_corpus` (attorney-curated), `well_formed` (valid format), or `unrecognized` (likely
+  error) — always, offline. With `SUBK_CITE_PROVIDER=online` it also checks the cite against
+  the **authoritative primary source for its type**: regulations → **eCFR** (which also
+  reports the "up to date as of" date), statutes/IRC → **US Code** (Cornell LII), `X FR Y` →
+  **Federal Register**, cases → **CourtListener** (needs a free `COURTLISTENER_TOKEN`; the
+  others need no key). Network failures fall back to the offline verdict. It runs over every
+  model draft in `enrich.py` (`cite_check`), so a hallucinated or removed cite is caught
+  before promotion; `test_cite_verify.py` covers the offline path. Remaining gap: IRS
+  rulings / IRB notices have no clean API — best-effort / manual for now.
 - **Confidentiality (Rule 1.6)** — `/ask` and `/compute` inputs and audit rows can carry
   matter facts. Encrypt at rest and in transit, restrict access, set a retention policy,
   and use no-train / zero-data-retention settings on any LLM calls.
