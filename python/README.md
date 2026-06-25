@@ -113,6 +113,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, cite, source, compute, hubs, hub, node, horizon)
 - `assistant.py` — plain-English front door: routes natural language to the right tool (rules / local Ollama model / OpenAI); the engine still produces every answer
 - `horizon.py` — SEPARATE scan of PROPOSED federal tax bills (govinfo BILLS / Congress.gov). Bills are not law and never enter the graph or currency gate; output is labeled "NOT authority". Works with the shared `DEMO_KEY`; set `GOVINFO_API_KEY` for higher limits
+- `subk_see.py` / `subk_intake.py` / `subk_analyze.py` — fact-intensive **substantial-economic-effect analyzer** (Phase 0: intake + reliability contract). `subk_analyze.py --capabilities` states exactly what can/can't be ingested; the tool reports which factors of the §704(b) test it can and cannot reach from the facts given, and stops at a local boundary (the Layer-A → Anthropic → Layer-B reasoning step is Phase 1 and not yet executed). `subk_see` is the doctrine model (factor tree + fact-frame), `subk_intake` the read-only ingestion engine
 - `test_assistant.py` — proves NL routing + that the engine (not the router) answers
 - `test_subk.py` — 40 checks
 - `parity_test.py` — 640 cross-language checks proving `web-src/engine.js` matches this

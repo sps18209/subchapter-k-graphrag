@@ -63,6 +63,10 @@ jobs:
         working-directory: python
         run: python test_horizon.py
 
+      - name: SEE analyzer reliability contract (intake/scope/sufficiency, offline)
+        working-directory: python
+        run: python test_subk_analyze.py
+
       - name: JS <-> Python parity (640 checks; needs node)
         working-directory: python
         run: python parity_test.py
