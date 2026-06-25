@@ -71,6 +71,10 @@ jobs:
         working-directory: python
         run: python test_subk_llm.py
 
+      - name: Disguised-sale doctrine + registry (offline)
+        working-directory: python
+        run: python test_subk_disguised.py
+
       - name: JS <-> Python parity (640 checks; needs node)
         working-directory: python
         run: python parity_test.py

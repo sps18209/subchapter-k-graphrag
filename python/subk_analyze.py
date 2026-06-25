@@ -21,14 +21,17 @@ import os
 import sys
 
 import subk_see
+import subk_doctrine
 import subk_intake
 import subk_llm
 import redact
 
 CAPABILITIES = """\
 ================ SUBK ANALYZE — capabilities & limits ================
-DOCTRINE WIRED:  Substantial economic effect only  (IRC 704(b); Treas. Reg. 1.704-1(b)).
-                 Disguised sale, §1.701-2 anti-abuse, etc. are NOT wired yet.
+DOCTRINES WIRED: Substantial economic effect (IRC 704(b); Treas. Reg. 1.704-1(b))
+                 Disguised sale         (IRC 707(a)(2)(B); Treas. Reg. 1.707-3 to -5)
+                 §1.701-2 anti-abuse and others are NOT wired yet. Pick with --doctrine see|disguised_sale
+                 (or just describe the issue — auto-detected from scope signals).
 
 HOW TO INPUT / WHERE FILES COME FROM
   • Guided + ROLE-BASED (recommended): --interview asks each party's real name (kept LOCAL, scrubbed
@@ -80,33 +83,35 @@ def _load_arg(val: str) -> str:
     return val or ""
 
 
-def verify_authority() -> dict:
-    """Layer A: confirm the SEE reg section is real and current against live eCFR. Degrades to
-    'unverified (offline)' on any failure — never blocks."""
+def verify_authority(doctrine=None) -> dict:
+    """Layer A: confirm the doctrine's ROOT reg section is real and current against live eCFR.
+    Degrades to 'unverified (offline)' on any failure — never blocks."""
+    d = doctrine or subk_see
     try:
         import cite_verify
-        hit = cite_verify.OnlineVerifier().check("Treas. Reg. 1.704-1", "regulation") or {}
-        return {"cite": subk_see.ROOT_CITE, "status": hit.get("status", "unverified"),
+        hit = cite_verify.OnlineVerifier().check(d.ROOT_CITE, "regulation") or {}
+        return {"cite": d.ROOT_CITE, "status": hit.get("status", "unverified"),
                 "as_of": hit.get("as_of"), "last_amended": hit.get("last_amended")}
     except Exception:
-        return {"cite": subk_see.ROOT_CITE, "status": "unverified (offline)"}
+        return {"cite": d.ROOT_CITE, "status": "unverified (offline)"}
 
 
-def build_frame(args) -> tuple[dict, dict, str]:
-    """Return (frame, ingest_report, issue_text) from whichever input door was used."""
+def build_frame(args, doctrine=None) -> tuple[dict, dict, str]:
+    """Return (frame, ingest_report, issue_text) from whichever input door was used. Doctrine-aware."""
     if args.form:
         form = json.loads(_load_arg(args.form))
-        frame = subk_intake.frame_from_form(form)
+        frame = subk_intake.frame_from_form(form, doctrine=doctrine)
         return frame, {"report": [], "facts": json.dumps(form)}, str(form)
     if args.facts:
         text = _load_arg(args.facts)
-        return subk_intake.detect_provisions(text, source="pasted facts"), {"report": [], "facts": text}, text
+        return (subk_intake.detect_provisions(text, source="pasted facts", doctrine=doctrine),
+                {"report": [], "facts": text}, text)
     # folder path
     folder = args.folder or (subk_intake.matter_dir(args.matter) if args.matter else None)
     if not folder:
         return None, None, ""
     ing = subk_intake.ingest_folder(folder)
-    frame = subk_intake.detect_provisions(ing["facts"], source="matter folder")
+    frame = subk_intake.detect_provisions(ing["facts"], source="matter folder", doctrine=doctrine)
     return frame, ing, ing["facts"]
 
 
@@ -184,6 +189,7 @@ def main():
     ap.add_argument("--interview", action="store_true",
                     help="guided, ANONYMIZED intake — asks for party codes (never real names) + the facts")
     ap.add_argument("--parties", help="anonymized roster, e.g. 'RoSm:contributing, ToJo:service'")
+    ap.add_argument("--doctrine", help="which doctrine: see | disguised_sale (default: autodetect)")
     ap.add_argument("--run", action="store_true",
                     help="run the reasoning sandwich (Layer A -> model -> Layer B); see --capabilities")
     args = ap.parse_args()
@@ -196,13 +202,32 @@ def main():
         return
 
     redactor = redact.Redactor()
+    # Resolve doctrine: explicit --doctrine wins; else peek at the input to autodetect (a JSON form
+    # routes by field-name overlap, free-text routes by scope signals).
+    doctrine = subk_doctrine.resolve(args.doctrine) if args.doctrine else None
+    if doctrine is None:
+        if args.form:
+            try:
+                doctrine = subk_doctrine.pick_for_form(json.loads(_load_arg(args.form)))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if doctrine is None:
+            peek = (_load_arg(args.facts) if args.facts else
+                    (_load_arg(args.form) if args.form else
+                     (subk_intake.ingest_folder(args.folder or subk_intake.matter_dir(args.matter))["facts"]
+                      if (args.folder or args.matter) else "")))
+            if peek:
+                doctrine, _, _ = subk_doctrine.autodetect(peek)
+    if doctrine is None:
+        doctrine = subk_see                  # safe default — SEE was the original wired doctrine
+
     if args.interview:
         form = _interview(redactor)
-        frame = subk_intake.frame_from_form(form)
+        frame = subk_intake.frame_from_form(form, doctrine=doctrine)
         ing = {"report": [], "facts": json.dumps(form)}
         issue = (form.get("allocation_at_issue", "") + " " + form.get("parties", "")).strip()
     else:
-        frame, ing, issue = build_frame(args)
+        frame, ing, issue = build_frame(args, doctrine=doctrine)
         if frame is None:
             sys.exit("no input resolved — see --capabilities")
         if args.parties:
@@ -210,9 +235,9 @@ def main():
             roster = "; ".join(_parties_to_roster([(p["code"], p["role"]) for p in parsed], redactor))
             frame["fields"]["parties"] = {"value": roster, "quote": roster, "source": "attorney input"}
 
-    scope = subk_intake.scope_check(issue)
-    ready = subk_see.readiness(frame)
-    auth = verify_authority()
+    scope = subk_intake.scope_check(issue, doctrine=doctrine)
+    ready = doctrine.readiness(frame)
+    auth = verify_authority(doctrine=doctrine)
 
     print("================ RELIABILITY MANIFEST (this run) ================")
     # what came in
@@ -234,17 +259,25 @@ def main():
             q = (v["quote"] or "")[:70]
             print(f"  ✓ {f:<32} [{v['source']}] {q}")
 
-    print(f"\nREADINESS: {'READY to analyze' if ready['ready'] else 'NOT READY'}")
+    print(f"\nDOCTRINE: {doctrine.DOCTRINE}")
+    print(f"READINESS: {'READY to analyze' if ready['ready'] else 'NOT READY'}")
     if ready["missing_minimum"]:
         print("  missing the minimum:", ", ".join(ready["missing_minimum"]))
-    print("  economic-effect paths reachable:", ", ".join(ready["economic_effect_paths_reachable"]) or "none")
+    # Each doctrine reports its own headline reachability key; show whichever applies.
+    if "economic_effect_paths_reachable" in ready:    # SEE
+        print("  economic-effect paths reachable:",
+              ", ".join(ready["economic_effect_paths_reachable"]) or "none")
+    if "fc_factors_reachable" in ready:               # disguised sale
+        print(f"  2-year presumption reachable: {ready['presumption_reachable']}")
+        print(f"  facts-and-circumstances factors reachable ({len(ready['fc_factors_reachable'])} of 10): "
+              + (", ".join(ready["fc_factors_reachable"]) or "none"))
     if ready["factors_blocked"]:
         print("  factors the tool CANNOT reach from these facts:")
         for b in ready["factors_blocked"]:
             print(f"    {b['id']:<14} needs: {', '.join(b['missing'])}")
 
     # Layer A: the verified bundle (deterministic; this is exactly what the model may use).
-    bundle = subk_llm.build_bundle(frame, auth)
+    bundle = subk_llm.build_bundle(frame, auth, doctrine=doctrine)
     print("\n================ LAYER A — VERIFIED BUNDLE (the only material the model may use) ================")
     print(f"  {len(bundle['items'])} items · cache key {subk_llm.bundle_key(bundle)}")
     for it in bundle["items"]:

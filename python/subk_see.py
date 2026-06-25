@@ -62,6 +62,23 @@ FRAME_FIELDS = {
 # The minimum needed even to ATTEMPT the analysis.
 REQUIRED_MINIMUM = ["allocation_at_issue"]
 
+# Scope signals — phrases in the issue text that indicate the SEE doctrine.
+SCOPE_SIGNALS = [
+    "economic effect", "substantial", "allocat", "capital account", "704(b)", "section 704",
+    "special allocation", "deficit restoration", "qualified income offset", "distributive share",
+]
+
+# Deterministic provision detectors — literal phrases found in pasted facts or an agreement; the
+# matched sentence becomes the field's verbatim quote.
+PROVISION_PATTERNS = {
+    "qualified_income_offset": r"qualified income offset",
+    "deficit_restoration_obligation": r"(deficit restoration|restore[sd]?\b[^.]{0,40}deficit|"
+                                      r"negative capital account[^.]{0,50}restore)",
+    "capital_account_maintenance": r"capital account[^.]{0,60}(maintain|in accordance|"
+                                   r"1\.704-1\(b\)\(2\)\(iv\)|section 704\(b\))",
+    "liquidation_per_positive_ca": r"liquidat[^.]{0,80}capital account",
+}
+
 
 def empty_frame() -> dict:
     return {"doctrine": DOCTRINE,

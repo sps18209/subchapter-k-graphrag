@@ -79,18 +79,19 @@ SYSTEM_PROMPT = (
 
 
 # ---- Layer A: assemble the verified bundle ----------------------------------------------------
-def build_bundle(frame: dict, authority: dict, holdings: list | None = None) -> dict:
-    """Return {items:[{id,kind,text}], ids:set, text:str}. Only verified/known material enters."""
+def build_bundle(frame: dict, authority: dict, holdings: list | None = None, doctrine=None) -> dict:
+    """Return {items:[{id,kind,text}], ids:set, text:str, doctrine:str}. Only verified/known material
+    enters. Doctrine defaults to SEE for backward compatibility."""
+    d = doctrine or subk_see
     items = []
-    # LAW: one item per evaluable factor, tagged with its reg subsection.
-    can, _ = subk_see.evaluable(frame)
-    for fac in subk_see.FACTORS:
+    # LAW: one item per leaf factor, tagged with its reg subsection.
+    for fac in d.FACTORS:
         if "needs" not in fac:
             continue
         items.append({"id": f"LAW:{fac['id']}", "kind": "law",
                       "text": f"{fac['label']} — {fac['reg']}"})
     items.append({"id": "LAW:ROOT", "kind": "law",
-                  "text": f"{subk_see.ROOT_CITE} — verified {authority.get('status', '?')}"
+                  "text": f"{d.ROOT_CITE} — verified {authority.get('status', '?')}"
                           + (f", current as of {authority['as_of']}" if authority.get("as_of") else "")})
     # CITE: matched holdings (already verified via CL/DAWSON).
     for h in holdings or []:
@@ -103,12 +104,13 @@ def build_bundle(frame: dict, authority: dict, holdings: list | None = None) -> 
                           "text": f"{field} = {v['value']} (source: {v.get('source')}; \"{q[:160]}\")"})
     ids = {it["id"] for it in items}
     text = "\n".join(f"[{it['id']}] {it['text']}" for it in items)
-    return {"items": items, "ids": ids, "text": text}
+    return {"items": items, "ids": ids, "text": text, "doctrine": d.DOCTRINE}
 
 
 def bundle_key(bundle: dict) -> str:
     h = hashlib.sha256(bundle["text"].encode("utf-8")).hexdigest()[:16]
-    return f"{h}.{PINNED_MODEL}.{PROMPT_VERSION}.{SCHEMA_VERSION}"
+    doc = bundle.get("doctrine", "see")
+    return f"{h}.{doc}.{PINNED_MODEL}.{PROMPT_VERSION}.{SCHEMA_VERSION}"
 
 
 # ---- model providers ----------------------------------------------------------------------

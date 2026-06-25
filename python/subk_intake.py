@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import re
 
+import subk_doctrine
 import subk_see
 
 # ---- where files come from -------------------------------------------------------------------
@@ -93,33 +94,26 @@ def ingest_folder(path: str) -> dict:
     return {"facts": "\n".join(chunks), "report": report, "error": None}
 
 
-# ---- scope: is this even a substantial-economic-effect matter? -------------------------------
-_SCOPE_SIGNALS = [
-    "economic effect", "substantial", "allocat", "capital account", "704(b)", "section 704",
-    "special allocation", "deficit restoration", "qualified income offset", "distributive share",
-]
-
-
-def scope_check(text: str) -> dict:
+# ---- scope: which doctrine, if any, fits this matter? ----------------------------------------
+def scope_check(text: str, doctrine=None) -> dict:
+    """If `doctrine` is given, check only that one; otherwise autodetect by signal score across all
+    wired doctrines. Returns the picked doctrine + signal hits, or out-of-scope if nothing matched."""
     t = (text or "").lower()
-    hits = [s for s in _SCOPE_SIGNALS if s in t]
-    return {"in_scope": bool(hits), "doctrine": subk_see.DOCTRINE, "signals": hits,
-            "reason": ("matches substantial-economic-effect signals" if hits else
-                       "no §704(b)/allocation/economic-effect signals found — out of scope for the "
-                       "only doctrine wired so far (substantial economic effect)")}
+    if doctrine is not None:
+        hits = [s for s in doctrine.SCOPE_SIGNALS if s in t]
+        return {"in_scope": bool(hits), "doctrine": doctrine.DOCTRINE, "signals": hits,
+                "reason": (f"matches {doctrine.DOCTRINE} signals" if hits else
+                           f"no {doctrine.DOCTRINE} signals found in the issue text")}
+    pick, score, scores = subk_doctrine.autodetect(t)
+    if pick is None:
+        return {"in_scope": False, "doctrine": None, "signals": [], "scores": scores,
+                "reason": "no doctrine signals matched (wired: " + ", ".join(subk_doctrine.names()) + ")"}
+    return {"in_scope": True, "doctrine": pick.DOCTRINE,
+            "signals": [s for s in pick.SCOPE_SIGNALS if s in t], "scores": scores,
+            "reason": f"autodetected {pick.DOCTRINE} (score {score})"}
 
 
 # ---- deterministic provision detection (phrase match -> verbatim quote) -----------------------
-_PROVISION_PATTERNS = {
-    "qualified_income_offset": r"qualified income offset",
-    "deficit_restoration_obligation": r"(deficit restoration|restore[sd]?\b[^.]{0,40}deficit|"
-                                      r"negative capital account[^.]{0,50}restore)",
-    "capital_account_maintenance": r"capital account[^.]{0,60}(maintain|in accordance|"
-                                   r"1\.704-1\(b\)\(2\)\(iv\)|section 704\(b\))",
-    "liquidation_per_positive_ca": r"liquidat[^.]{0,80}capital account",
-}
-
-
 def _sentence_around(text: str, start: int, end: int) -> str:
     a = text.rfind(".", 0, start) + 1
     b = text.find(".", end)
@@ -127,12 +121,13 @@ def _sentence_around(text: str, start: int, end: int) -> str:
     return re.sub(r"\s+", " ", text[a:b]).strip()[:300]
 
 
-def detect_provisions(text: str, source: str = "facts") -> dict:
-    """Fill an SEE fact-frame's provision fields by literal phrase match. Each detected field's
-    quote is the actual sentence it was found in (string-verifiable). Fields it can't detect stay
-    null — the tool will then report them as missing rather than guess."""
-    frame = subk_see.empty_frame()
-    for field, pat in _PROVISION_PATTERNS.items():
+def detect_provisions(text: str, source: str = "facts", doctrine=None) -> dict:
+    """Fill the doctrine's frame from literal phrase matches in `text`. Each detected field carries
+    the actual sentence it was found in (string-verifiable). Fields the patterns can't detect stay
+    null — the tool then reports them as missing rather than guess. Defaults to the SEE doctrine."""
+    d = doctrine or subk_see
+    frame = d.empty_frame()
+    for field, pat in d.PROVISION_PATTERNS.items():
         m = re.search(pat, text, re.I)
         if m:
             frame["fields"][field] = {"value": True, "quote": _sentence_around(text, m.start(), m.end()),
@@ -185,11 +180,13 @@ def role_label(role: str, used: set) -> str:
     return label
 
 
-def frame_from_form(form: dict) -> dict:
+def frame_from_form(form: dict, doctrine=None) -> dict:
     """Light path: attorney-supplied dict of field -> value. Quote = the supplied value, source =
-    'attorney input'. Unknown keys are ignored; only the closed SEE vocabulary is accepted."""
-    frame = subk_see.empty_frame()
-    for field in subk_see.FRAME_FIELDS:
+    'attorney input'. Unknown keys are ignored; only the closed vocabulary of the picked doctrine
+    is accepted. Defaults to the SEE doctrine for backward compatibility."""
+    d = doctrine or subk_see
+    frame = d.empty_frame()
+    for field in d.FRAME_FIELDS:
         if field in form and form[field] not in (None, ""):
             frame["fields"][field] = {"value": form[field], "quote": str(form[field]),
                                       "source": "attorney input"}
