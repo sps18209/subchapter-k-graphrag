@@ -30,9 +30,11 @@ DOCTRINE WIRED:  Substantial economic effect only  (IRC 704(b); Treas. Reg. 1.70
                  Disguised sale, §1.701-2 anti-abuse, etc. are NOT wired yet.
 
 HOW TO INPUT / WHERE FILES COME FROM
+  • Guided + ANONYMIZED (recommended): --interview asks how many parties and their short CODES
+        (e.g. RoSm = Robert Smith) — never real names — then the facts. Or pass the roster directly:
+        --parties "RoSm:contributing, ToJo:service". The real name<->code map stays with YOU.
   • Folder (real matters): ~/subk-matters/<matter>/  (created for you; home dir because macOS
-        blocks Terminal writes to ~/Downloads). Drop the partnership/operating agreement +
-        capital-account statements there, then run with --matter/--folder.
+        blocks Terminal writes to ~/Downloads). Drop the agreement + capital-account statements there.
   • Light path: --facts (paste/notes) or --form (structured JSON) for hypotheticals & study.
   Source files are READ-ONLY — never modified or deleted.
 
@@ -52,6 +54,8 @@ WHAT IT WILL NOT DO
     whether the allocation HAS substantial economic effect is a conclusion of law you make.
 
 CONFIDENTIALITY BOUNDARY (Rule 1.6)
+  • ANONYMIZE AT SOURCE: enter parties as short codes (--interview / --parties), so no real name
+    ever enters the tool — local OR cloud. This is the primary defense; masking below is a backstop.
   • Ingestion, the fact-frame, and the verified Layer-A bundle are 100% LOCAL.
   • The sandwich runs ONLY with --run, ANTHROPIC_API_KEY, AND SUBK_LLM_ZDR_CONFIRMED=1 (your
     attestation that the account is no-train / zero-data-retention; the pinned model supports ZDR).
@@ -102,6 +106,54 @@ def build_frame(args) -> tuple[dict, dict, str]:
     return frame, ing, ing["facts"]
 
 
+def _interview() -> dict:
+    """Guided, anonymized intake. Collects a party ROSTER as short codes (never real names), then
+    the SEE facts referencing those codes. Real identities never enter the tool."""
+    import string
+    print("================ GUIDED INTAKE (keep it anonymized) ================")
+    print("Use SHORT CODES for parties — e.g. first 2 letters of first + last name: Robert Smith -> RoSm.")
+    print("The real name<->code map stays with YOU (privileged); the tool only ever sees the code.\n")
+    try:
+        n = int((input("How many parties are involved in this allocation issue? ").strip() or "0"))
+    except ValueError:
+        n = 0
+    parties = []
+    for i in range(max(n, 0)):
+        default = "Party " + (string.ascii_uppercase[i] if i < 26 else str(i + 1))
+        code = input(f"  Party {i + 1} code (e.g. RoSm) [{default}]: ").strip() or default
+        if subk_intake.looks_identifying(code):
+            print("    ! that looks like a real name — prefer a short code (2 of first + 2 of last).")
+        role = input(f"  Party {i + 1} role (contributing / service / managing) [optional]: ").strip()
+        parties.append({"code": code, "role": role})
+
+    form = {}
+    if parties:
+        form["parties"] = subk_intake.roster_text(parties)
+    print("\nNow the facts — reference the codes above; keep amounts vague if you prefer.")
+    form["allocation_at_issue"] = input("  Allocation being tested (e.g. '99% depreciation to RoSm'): ").strip()
+
+    def yn(q):
+        a = input(f"  {q} [y/N/? unknown]: ").strip().lower()
+        return True if a.startswith("y") else (None if a.startswith("?") else False if a.startswith("n") else None)
+
+    for field, q in [
+        ("capital_account_maintenance", "Does the agreement maintain capital accounts per Reg. 1.704-1(b)(2)(iv)?"),
+        ("liquidation_per_positive_ca", "Are liquidating distributions made per positive capital accounts?"),
+        ("deficit_restoration_obligation", "Is there an UNCONDITIONAL deficit-restoration obligation?"),
+        ("qualified_income_offset", "Does the agreement contain a qualified income offset?"),
+    ]:
+        v = yn(q)
+        if v is not None:
+            form[field] = v
+    for field, q in [("capital_account_balances", "Capital-account balances (use codes; vague amounts OK)"),
+                     ("tax_motivation", "Any facts suggesting the allocation is tax-motivated?")]:
+        a = input(f"  {q} [optional]: ").strip()
+        if a:
+            form[field] = a
+    print("===================================================================\n")
+    return form
+
+
 def main():
     ap = argparse.ArgumentParser(description="Substantial-economic-effect analyzer (Phase 0: intake + contract)")
     ap.add_argument("--capabilities", action="store_true", help="print what this tool can and cannot do")
@@ -109,19 +161,32 @@ def main():
     ap.add_argument("--folder", help="folder of documents to ingest (read-only)")
     ap.add_argument("--facts", help="pasted facts (or @file)")
     ap.add_argument("--form", help="structured fact-frame as JSON (or @file)")
+    ap.add_argument("--interview", action="store_true",
+                    help="guided, ANONYMIZED intake — asks for party codes (never real names) + the facts")
+    ap.add_argument("--parties", help="anonymized roster, e.g. 'RoSm:contributing, ToJo:service'")
     ap.add_argument("--run", action="store_true",
-                    help="run the reasoning sandwich (Layer A -> Anthropic -> Layer B); needs ANTHROPIC_API_KEY")
+                    help="run the reasoning sandwich (Layer A -> model -> Layer B); see --capabilities")
     args = ap.parse_args()
 
-    if args.capabilities or not (args.matter or args.folder or args.facts or args.form):
+    if args.capabilities or not (args.matter or args.folder or args.facts or args.form or args.interview):
         print(CAPABILITIES)
         if not args.capabilities:
-            print("\nGive an input: --matter NAME | --folder PATH | --facts @file | --form JSON")
+            print("\nGive an input: --interview (guided, anonymized) | --matter NAME | --folder PATH | "
+                  "--facts @file | --form JSON")
         return
 
-    frame, ing, issue = build_frame(args)
-    if frame is None:
-        sys.exit("no input resolved — see --capabilities")
+    if args.interview:
+        form = _interview()
+        frame = subk_intake.frame_from_form(form)
+        ing = {"report": [], "facts": json.dumps(form)}
+        issue = (form.get("allocation_at_issue", "") + " " + form.get("parties", "")).strip()
+    else:
+        frame, ing, issue = build_frame(args)
+        if frame is None:
+            sys.exit("no input resolved — see --capabilities")
+        if args.parties:
+            roster = subk_intake.roster_text(subk_intake.parse_parties(args.parties))
+            frame["fields"]["parties"] = {"value": roster, "quote": roster, "source": "attorney input"}
 
     scope = subk_intake.scope_check(issue)
     ready = subk_see.readiness(frame)
@@ -167,26 +232,34 @@ def main():
         print("\nNot ready — supply the missing facts above before running the analysis.")
         return
 
-    if not (args.run and os.environ.get("ANTHROPIC_API_KEY")):
+    prov = subk_llm.provider()
+    local = prov == "ollama"
+    if not (args.run and (local or os.environ.get("ANTHROPIC_API_KEY"))):
         print("\n================ LOCAL BOUNDARY ================")
-        print("Nothing has left this machine. To run the reasoning sandwich (Layer A -> Anthropic ->")
-        print(f"Layer B), set ANTHROPIC_API_KEY and add --run. The bundle above is EXACTLY what would")
-        print(f"be sent to the pinned model ({subk_llm.PINNED_MODEL}); Layer B verifies the reply before")
-        print("you ever see it. Nothing else leaves the machine.")
+        print("Nothing has left this machine. To run the reasoning sandwich (Layer A -> model -> Layer B):")
+        print(f"  • CLOUD  : set ANTHROPIC_API_KEY + SUBK_LLM_ZDR_CONFIRMED=1, then --run (pinned {subk_llm.PINNED_MODEL},")
+        print("             identifiers masked, narrow-retention/ZDR account).")
+        print("  • LOCAL  : set SUBK_LLM_PROVIDER=ollama, then --run — runs entirely on this machine,")
+        print("             no key, no ZDR, nothing leaves the box.")
+        print("The bundle above is EXACTLY what a run would reason over; Layer B verifies the reply either way.")
         print("================================================")
         return
 
-    # Phase 1: run the sandwich. Rule 1.6 attestation gate — refuse until the operator confirms
-    # the Anthropic account is no-train / zero-data-retention (code can't verify it; it must attest).
-    if os.environ.get("SUBK_LLM_ZDR_CONFIRMED") != "1":
+    # Cloud only: Rule 1.6 attestation gate (code can't verify retention; the operator must attest).
+    if not local and os.environ.get("SUBK_LLM_ZDR_CONFIRMED") != "1":
         print("\n================ BLOCKED (Rule 1.6) ================")
-        print("Refusing to send client facts. Set SUBK_LLM_ZDR_CONFIRMED=1 to attest that your")
-        print(f"Anthropic account is configured no-train / zero-data-retention and uses {subk_llm.PINNED_MODEL}")
-        print("(which supports ZDR). Identifiers are masked regardless, but the attestation is required.")
+        print("Refusing to send client facts to the cloud. Either set SUBK_LLM_ZDR_CONFIRMED=1 to attest")
+        print(f"your Anthropic account is no-train / zero-data-retention (the pinned {subk_llm.PINNED_MODEL} supports")
+        print("ZDR), OR run fully local with SUBK_LLM_PROVIDER=ollama (no attestation needed).")
         print("===================================================")
         return
-    masking = "ON (identifiers masked before send)" if os.environ.get("SUBK_LLM_MASK", "1") != "0" else "OFF"
-    print(f"\n*** --run: sending the MASKED bundle to {subk_llm.PINNED_MODEL}. Masking: {masking}. ***")
+
+    if local:
+        print(f"\n*** --run LOCAL: {os.environ.get('SUBK_LLM_OLLAMA_MODEL', 'llama3.2:3b')} via Ollama — nothing")
+        print("    leaves this machine. (Smaller local model: lower quality, but Layer B still rejects ungrounded output.) ***")
+    else:
+        masking = "ON" if os.environ.get("SUBK_LLM_MASK", "1") != "0" else "OFF"
+        print(f"\n*** --run CLOUD: sending the masked bundle to {subk_llm.PINNED_MODEL}. Masking: {masking}. ***")
     envelope, masker = subk_llm.analyze(bundle, issue)
     if not envelope:
         sys.exit("the model returned nothing (check ANTHROPIC_API_KEY and `pip install anthropic`).")

@@ -47,6 +47,7 @@ FACTORS = [
 # Fact-frame fields the intake fills. Each value carries a verbatim quote (or null) + a source
 # locator, so Layer B can string-match the quote back to the document it came from.
 FRAME_FIELDS = {
+    "parties": "anonymized party roster — short codes only (e.g. RoSm), never real names",
     "allocation_at_issue": "the specific allocation being tested (prerequisite for everything)",
     "capital_account_maintenance": "does the agreement maintain capital accounts per (b)(2)(iv)?",
     "liquidation_per_positive_ca": "are liquidating distributions made per positive capital accounts?",

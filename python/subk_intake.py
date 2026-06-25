@@ -142,6 +142,31 @@ def detect_provisions(text: str, source: str = "facts") -> dict:
     return frame
 
 
+# ---- anonymized party intake -----------------------------------------------------------------
+# Anonymize at the SOURCE: the attorney enters short codes (e.g. 'RoSm' = Robert Smith) and the
+# real-name<->code map stays with the attorney (privileged). The tool only ever holds the codes,
+# so no real name enters the system — for local OR cloud. Masking is then just a backstop.
+def parse_parties(spec: str) -> list:
+    """Parse 'RoSm:contributing, ToJo:service' -> [{code, role}]."""
+    out = []
+    for chunk in (spec or "").split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        code, _, role = chunk.partition(":")
+        out.append({"code": code.strip(), "role": role.strip()})
+    return out
+
+
+def looks_identifying(code: str) -> bool:
+    """Best-effort nudge: a code with a space or that's long probably IS a real name, not a code."""
+    return (" " in code.strip()) or len(code.strip()) > 12
+
+
+def roster_text(parties: list) -> str:
+    return "; ".join(p["code"] + (f" ({p['role']})" if p.get("role") else "") for p in parties)
+
+
 def frame_from_form(form: dict) -> dict:
     """Light path: attorney-supplied dict of field -> value. Quote = the supplied value, source =
     'attorney input'. Unknown keys are ignored; only the closed SEE vocabulary is accepted."""

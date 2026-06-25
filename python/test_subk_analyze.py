@@ -58,6 +58,16 @@ def main():
     check("unknown keys are ignored", "made_up_field" not in fr2["fields"])
     check("known key is taken with attorney-input source", fr2["fields"]["allocation_at_issue"]["source"] == "attorney input")
 
+    print("anonymized party intake (codes never real names):")
+    parties = si.parse_parties("RoSm:contributing, ToJo:service")
+    check("parses codes + roles", parties == [{"code": "RoSm", "role": "contributing"},
+                                              {"code": "ToJo", "role": "service"}])
+    check("roster text is codes only", si.roster_text(parties) == "RoSm (contributing); ToJo (service)")
+    check("a real name is flagged as identifying", si.looks_identifying("Robert Smith") is True)
+    check("a short code is not flagged", si.looks_identifying("RoSm") is False)
+    fr = si.frame_from_form({"allocation_at_issue": "x", "parties": si.roster_text(parties)})
+    check("the roster enters the frame as a fact field", fr["fields"]["parties"]["value"] == "RoSm (contributing); ToJo (service)")
+
     print(f"\nALL {passed} ANALYZER-CONTRACT CHECKS PASSED")
 
 

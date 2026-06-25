@@ -109,7 +109,12 @@ def bundle_key(bundle: dict) -> str:
     return f"{h}.{PINNED_MODEL}.{PROMPT_VERSION}.{SCHEMA_VERSION}"
 
 
-# ---- Anthropic: constrained, pinned, gated ----------------------------------------------------
+# ---- model providers ----------------------------------------------------------------------
+# 'anthropic' (cloud, pinned, masked, ZDR-gated) | 'ollama' (fully local, nothing leaves the box)
+def provider() -> str:
+    return os.environ.get("SUBK_LLM_PROVIDER", "anthropic")
+
+
 def _cache_path(key: str) -> str:
     d = os.path.expanduser("~/subk-matters/.llm-cache")
     os.makedirs(d, exist_ok=True)
@@ -117,11 +122,13 @@ def _cache_path(key: str) -> str:
 
 
 def _masked_user(bundle: dict, question: str):
-    """Build the user payload with FACT/CITE item text MASKED (LAW items left intact — the model
-    must see the real reg). Deterministic, so the masker reconstructs identically on a cache hit.
-    Returns (user_text, masker). Masking is on unless SUBK_LLM_MASK=0."""
+    """Build the user payload with FACT/CITE item text MASKED (LAW items left intact). Deterministic,
+    so the masker reconstructs identically on a cache hit. Masking defaults ON for the cloud provider
+    and OFF for local (nothing leaves the machine, so there's nothing to protect from). SUBK_LLM_MASK
+    overrides either way. Returns (user_text, masker)."""
     masker = mask.Masker()
-    if os.environ.get("SUBK_LLM_MASK", "1") == "0":
+    default = "1" if provider() == "anthropic" else "0"
+    if os.environ.get("SUBK_LLM_MASK", default) == "0":
         body, q = bundle["text"], question
     else:
         body = "\n".join(f"[{it['id']}] " + (it["text"] if it["kind"] == "law" else masker.mask(it["text"]))
@@ -131,36 +138,59 @@ def _masked_user(bundle: dict, question: str):
     return user, masker
 
 
-def analyze(bundle: dict, question: str, use_cache: bool = True):
-    """Call the pinned model with forced-schema tool use over the MASKED bundle. Returns
-    (envelope, masker): envelope is the validated dict (masked tokens intact) or None when no API
-    key / SDK (caller then stays at the local boundary); masker un-masks for local display. The
-    cache key is the UNMASKED bundle hash, so it's unique per matter; masking is reconstructed
-    deterministically on a hit. Raw client identity never reaches the model or the cache file."""
-    path = _cache_path(bundle_key(bundle))
-    user, masker = _masked_user(bundle, question)   # rebuilt the same way on hit and miss
-    if use_cache and os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as fh:
-            return json.load(fh), masker
+def _emit_anthropic(user: str) -> dict | None:
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        return None, masker
+        return None
     try:
         import anthropic
     except ImportError:
-        return None, masker
+        return None
     client = anthropic.Anthropic()
-    model = os.environ.get("SUBK_LLM_MODEL", PINNED_MODEL)
     resp = client.messages.create(
-        model=model, max_tokens=8000, system=SYSTEM_PROMPT,
+        model=os.environ.get("SUBK_LLM_MODEL", PINNED_MODEL), max_tokens=8000, system=SYSTEM_PROMPT,
         tools=[{"name": "emit_analysis", "description": "Emit the structured SEE analysis.",
                 "input_schema": ENVELOPE_SCHEMA, "strict": True}],
         tool_choice={"type": "tool", "name": "emit_analysis"},
         messages=[{"role": "user", "content": user}],
     )
-    envelope = next((b.input for b in resp.content
-                     if getattr(b, "type", None) == "tool_use" and b.name == "emit_analysis"), None)
+    return next((b.input for b in resp.content
+                 if getattr(b, "type", None) == "tool_use" and b.name == "emit_analysis"), None)
+
+
+def _emit_ollama(user: str) -> dict | None:
+    """Fully local: Ollama with JSON-schema structured output. Nothing leaves the machine. A weak
+    local model can only produce a weak or malformed envelope — Layer B rejects anything ungrounded,
+    so it can never present invented law as verified."""
+    import urllib.request
+    url = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat"
+    model = os.environ.get("SUBK_LLM_OLLAMA_MODEL", "llama3.2:3b")
+    payload = {"model": model, "stream": False, "options": {"temperature": 0}, "format": ENVELOPE_SCHEMA,
+               "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]}
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            content = json.loads(r.read())["message"]["content"]
+        env = json.loads(content)
+        return env if isinstance(env, dict) and "propositions" in env else None
+    except Exception:
+        return None
+
+
+def analyze(bundle: dict, question: str, use_cache: bool = True):
+    """Run the middle of the sandwich over the (masked, for cloud) bundle. Returns (envelope, masker):
+    envelope is the model's structured output or None (no key/SDK/local server → caller stays at the
+    boundary); masker un-masks for local display. Cache key includes the provider; raw client identity
+    never reaches the cloud model or the cache file."""
+    prov = provider()
+    path = _cache_path(f"{bundle_key(bundle)}.{prov}")
+    user, masker = _masked_user(bundle, question)   # rebuilt the same way on hit and miss
+    if use_cache and os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh), masker
+    envelope = _emit_ollama(user) if prov == "ollama" else _emit_anthropic(user)
     if envelope is not None and use_cache:
-        with open(path, "w", encoding="utf-8") as fh:    # stores masked tokens, never raw identity
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump(envelope, fh, indent=2)
     return envelope, masker
 
