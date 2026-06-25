@@ -66,6 +66,9 @@ CONFIDENTIALITY BOUNDARY (Rule 1.6)
     LAW text is not masked. (SUBK_LLM_MASK=0 disables it.)
   • Layer B closure-checks the reply before you see it. Without the gates the tool stops at the
     local boundary — nothing leaves the machine.
+  • ONE EXIT, FAIL-CLOSED: all sends pass a single point that refuses if any registered name
+    survived redaction; every send is recorded to a local egress log (sha256 of the scrubbed
+    payload + a roles-only redaction summary, never names) at ~/subk-matters/.egress-log.jsonl.
 ====================================================================="""
 
 
@@ -298,7 +301,15 @@ def main():
     else:
         masking = "ON" if os.environ.get("SUBK_LLM_MASK", "1") != "0" else "OFF"
         print(f"\n*** --run CLOUD: sending the REDACTED + masked bundle to {subk_llm.PINNED_MODEL}. Masking: {masking}. ***")
-    envelope, masker = subk_llm.analyze(bundle, issue, redactor=redactor)
+    try:
+        envelope, masker = subk_llm.analyze(bundle, issue, redactor=redactor)
+    except subk_llm.EgressBlocked as e:
+        print("\n================ BLOCKED — egress invariant (fail-closed) ================")
+        print(f"  {e}. Nothing was sent.")
+        print("  A registered identifier would have left the machine. Re-run --interview so the")
+        print("  name is mapped to a role and scrubbed everywhere.")
+        print("=========================================================================")
+        return
     if not envelope:
         sys.exit("the model returned nothing (check ANTHROPIC_API_KEY and `pip install anthropic`).")
     v = subk_llm.layer_b_verify(envelope, bundle["ids"])

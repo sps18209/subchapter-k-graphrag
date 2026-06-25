@@ -21,9 +21,11 @@ at the local boundary — nothing leaves the machine. Layer A and Layer B are fu
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
+import re
 
 import lawfact
 import mask
@@ -182,17 +184,65 @@ def _emit_ollama(user: str) -> dict | None:
         return None
 
 
+class EgressBlocked(Exception):
+    """Raised at the single exit when a registered client identifier would leave the machine."""
+
+
+def assert_clean(payload: str, redactor) -> None:
+    """FAIL-CLOSED invariant at the one egress point: every name the redactor was told to scrub MUST
+    be gone from the payload. If one survived (a redaction bug / future code drift), refuse to send
+    rather than scrub-and-hope. The error never contains the name (it would leak into logs)."""
+    if redactor is None:
+        return
+    for name in redactor.names:
+        if re.search(r"\b" + re.escape(name) + r"\b", payload, re.I):
+            raise EgressBlocked("a registered client identifier survived redaction — send refused")
+
+
+def _egress_log(provider_name: str, model: str, key: str, payload: str, redactor, masker) -> None:
+    """Append a local, tamper-evident record of what left: a sha256 of the SCRUBBED payload + a
+    redaction summary (role labels are safe to log; real names are NEVER logged). Best-effort."""
+    try:
+        log = os.environ.get("SUBK_EGRESS_LOG", os.path.expanduser("~/subk-matters/.egress-log.jsonl"))
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        prev = "genesis"
+        if os.path.exists(log):
+            with open(log, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+            if lines:
+                prev = json.loads(lines[-1]).get("chain", "genesis")
+        rec = {
+            "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+            "provider": provider_name, "model": model, "bundle_key": key,
+            "payload_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+            "payload_chars": len(payload),
+            "name_substitutions": len(redactor.codes) if redactor else 0,
+            "roles": redactor.codes if redactor else [],     # functional roles only — not names
+            "masks": len(masker.map) if masker else 0,
+        }
+        rec["chain"] = hashlib.sha256((prev + json.dumps(rec, sort_keys=True)).encode()).hexdigest()[:16]
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass   # logging must never block or crash a send
+
+
 def analyze(bundle: dict, question: str, use_cache: bool = True, redactor=None):
     """Run the middle of the sandwich over the REDACTED + masked bundle. Returns (envelope, masker):
     envelope is the model's structured output or None (no key/SDK/local server → caller stays at the
-    boundary); masker un-masks for local display. Cache key includes the provider; real client names
-    (redacted to codes) and structured identifiers (masked) never reach the model or the cache file."""
+    boundary). The SINGLE egress point: assert_clean() fails closed if a registered name survived, and
+    every actual send is recorded to the local egress log. Cache hits don't send (no egress)."""
     prov = provider()
-    path = _cache_path(f"{bundle_key(bundle)}.{prov}")
+    key = bundle_key(bundle)
+    path = _cache_path(f"{key}.{prov}")
     user, masker = _masked_user(bundle, question, redactor)   # rebuilt the same way on hit and miss
     if use_cache and os.path.exists(path):
         with open(path, "r", encoding="utf-8") as fh:
-            return json.load(fh), masker
+            return json.load(fh), masker                      # cache hit — nothing leaves the machine
+    assert_clean(user, redactor)                              # <- fail-closed invariant, before any send
+    model = (os.environ.get("SUBK_LLM_OLLAMA_MODEL", "llama3.2:3b") if prov == "ollama"
+             else os.environ.get("SUBK_LLM_MODEL", PINNED_MODEL))
+    _egress_log(prov, model, key, user, redactor, masker)     # <- provable record of exactly what left
     envelope = _emit_ollama(user) if prov == "ollama" else _emit_anthropic(user)
     if envelope is not None and use_cache:
         with open(path, "w", encoding="utf-8") as fh:

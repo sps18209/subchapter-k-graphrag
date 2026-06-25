@@ -116,6 +116,33 @@ def main():
           "John Doe" not in user and "JoDo" in user)
     check("LAW reg text is never redacted (model needs the real reg)", "1.704-1(b)(2)(ii)" in user)
 
+    print("egress invariant — fail-closed at the one exit:")
+    rc = redact.Redactor(); rc.add_name("John Doe", code="Contributing partner")
+    try:
+        subk_llm.assert_clean("the Contributing partner contributed land", rc)
+        check("a clean (redacted) payload passes the invariant", True)
+    except subk_llm.EgressBlocked:
+        check("a clean (redacted) payload passes the invariant", False)
+    raised = False
+    try:
+        subk_llm.assert_clean("John Doe contributed land", rc)   # a name survived redaction
+    except subk_llm.EgressBlocked as e:
+        raised = True
+        check("the error never contains the leaked name", "John" not in str(e) and "Doe" not in str(e))
+    check("a surviving registered name is refused (fail-closed)", raised)
+
+    print("egress audit log — provable record, no names:")
+    import json as _json, tempfile, os as _os
+    logf = _os.path.join(tempfile.mkdtemp(), "egress.jsonl")
+    _os.environ["SUBK_EGRESS_LOG"] = logf
+    msk = mask.Masker(); msk.mask("$100,000")
+    subk_llm._egress_log("anthropic", "claude-opus-4-8", "key123", "Contributing partner gets [AMOUNT_1]", rc, msk)
+    rec = _json.loads(open(logf).read().splitlines()[-1])
+    check("logs a sha256 of the scrubbed payload", len(rec["payload_sha256"]) == 64)
+    check("logs roles, not names", "Contributing partner" in rec["roles"] and "John Doe" not in str(rec))
+    check("records the mask count + a chain hash", rec["masks"] == 1 and "chain" in rec)
+    del _os.environ["SUBK_EGRESS_LOG"]
+
     print(f"\nALL {passed} SANDWICH-SAFETY CHECKS PASSED")
 
 
