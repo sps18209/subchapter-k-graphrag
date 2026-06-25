@@ -109,7 +109,8 @@ class OnlineVerifier:
       statute (IRC)    -> US Code (Cornell LII)
       federal_register -> federalregister.gov
       ruling           -> IRS drop folder (Rev. Rul. / Rev. Proc. / Notice / Announcement PDFs)
-      case             -> CourtListener (needs a free COURTLISTENER_TOKEN)
+      case             -> CourtListener (reporter cite or party-name search; needs a token),
+                          then US Tax Court DAWSON (keyless) for the T.C. memos CL doesn't index
     .check(citation, kind) returns a verdict dict (status/source/url/...) or None when no
     online source applies. Network failures -> None, so the offline structural check still
     stands. All lookups are read-only existence checks.
@@ -135,7 +136,10 @@ class OnlineVerifier:
             if kind == "ruling":               # Rev. Rul. / Rev. Proc. / Notice / Announcement
                 return self._irs_drop(citation)
             if kind == "case":
-                return self._courtlistener(citation)
+                hit = self._courtlistener(citation)
+                if hit and hit.get("status") == "verified_external":
+                    return hit
+                return self._dawson(citation) or hit   # Tax Court memos CourtListener misses
         except Exception:
             return None
         return None
@@ -292,6 +296,33 @@ class OnlineVerifier:
         return {"status": "not_found", "source": "IRS (irs.gov)", "url": url,
                 "note": "not in the IRS recent-guidance folder; older rulings are in the IRB "
                         "archive — verify manually"}
+
+    # The US Tax Court's DAWSON system is the authoritative source for T.C. opinions (incl. the
+    # memo/summary opinions CourtListener does not index). Keyless. Its opinion search is full-text,
+    # so we search the distinctive party name and confirm by matching it in the case CAPTION.
+    _DAWSON_HOSTS = ("public-api-green.dawson.ustaxcourt.gov", "public-api-blue.dawson.ustaxcourt.gov")
+
+    def _dawson(self, citation: str):
+        parties = [p for p in re.split(r"\bv\.?\s+", citation, flags=re.I) if "commissioner" not in p.lower()]
+        words = re.findall(r"[A-Za-z]{3,}", parties[0]) if parties else []
+        key = words[0] if words else ""
+        if not key:
+            return None
+        q = ("/public-api/opinion-search?dateRange=allDates&opinionTypes=MOP,SOP,TCOP,BOP&keyword="
+             + urllib.parse.quote(key))
+        for host in self._DAWSON_HOSTS:
+            try:
+                data = self._json("https://" + host + q)
+            except Exception:
+                continue   # host down (e.g. mid blue/green deploy) — try the other
+            for x in data.get("results", []):
+                if key.lower() in (x.get("caseCaption", "") or "").lower():
+                    docket = x.get("docketNumber", "")
+                    return {"status": "verified_external", "source": "US Tax Court (DAWSON)",
+                            "url": f"https://dawson.ustaxcourt.gov/case-detail/{docket}",
+                            "note": (x.get("documentTitle", "") or "").strip()[:70]}
+            return None   # host answered but no caption match
+        return None
 
     def _courtlistener(self, citation: str):
         if not self.cl_token:

@@ -157,8 +157,11 @@ the thing to be careful with is turning the *query embedder* to `openai`.
   the **authoritative primary source for its type**: regulations → **eCFR** (which also
   reports the "up to date as of" date), statutes/IRC → **US Code** (Cornell LII), `X FR Y` →
   **Federal Register**, Rev. Rul./Rev. Proc./Notice → **IRS** (irs.gov recent-guidance
-  folder), cases → **CourtListener** (the only type needing a key — a free
-  `COURTLISTENER_TOKEN`; everything else needs none). Network failures fall back to the
+  folder), cases → **CourtListener** (reporter cite or party-name search; the only source
+  needing a key — a free `COURTLISTENER_TOKEN`) **then the US Tax Court's DAWSON system**
+  (keyless, authoritative) for the T.C. memo/summary opinions CourtListener doesn't index —
+  e.g. *Azimzadeh v. Commissioner*, T.C. Memo. 2013-169, which CL misses but DAWSON confirms.
+  Everything except non-Tax-Court cases needs no key. Network failures fall back to the
   offline verdict. It runs over every model draft in `enrich.py` (`cite_check`), so a
   hallucinated or removed cite is caught before promotion; `test_cite_verify.py` covers the
   offline path. Known limit: the IRS drop folder holds recent guidance, so a pre-2000s
