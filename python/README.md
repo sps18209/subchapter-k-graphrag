@@ -108,9 +108,9 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `retrieve.py` — Layer 3 retrieval (BM25 + optional dense fusion + expansion + rerank + currency + routing)
 - `embeddings.py` — pluggable embedders (hashing offline stand-in / OpenAI) + the dense index for hybrid retrieval
 - `enrich.py` — gated Layer-2 enrichment: an LLM (stub/OpenAI) drafts glosses; an attorney promotes them (the only writer)
-- `cite_verify.py` — citation verification: classify + check against corpus/format (offline), plus optional live primary-source lookup (eCFR / US Code / Federal Register / IRS rulings / CourtListener — only cases need a key) via `SUBK_CITE_PROVIDER=online`; reports the section's last-amended date, and `--source` fetches the actual current text from the primary source
+- `cite_verify.py` — citation verification: classify + check against corpus/format (offline), plus optional live primary-source lookup (eCFR / US Code / Federal Register / IRS rulings / CourtListener — only cases need a key) via `SUBK_CITE_PROVIDER=online`; reports the section's last-amended date, `--source` fetches the actual current text, and `--audit` sweeps every corpus citation against the live sources
 - `query.py` — one-shot CLI
-- `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
+- `tui.py` — interactive terminal UI / REPL (ask, asof, verify, cite, source, compute, hubs, hub, node, horizon)
 - `assistant.py` — plain-English front door: routes natural language to the right tool (rules / local Ollama model / OpenAI); the engine still produces every answer
 - `horizon.py` — SEPARATE scan of PROPOSED federal tax bills (govinfo BILLS / Congress.gov). Bills are not law and never enter the graph or currency gate; output is labeled "NOT authority". Works with the shared `DEMO_KEY`; set `GOVINFO_API_KEY` for higher limits
 - `test_assistant.py` — proves NL routing + that the engine (not the router) answers
@@ -124,6 +124,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `test_hybrid.py` — hybrid (dense + lexical) retrieval checks, offline and deterministic
 - `test_enrich.py` — proves the enrichment gate: drafts are not citable until an attorney promotes them
 - `test_cite_verify.py` — proves the citation gate: corpus-backed vs well-formed vs unrecognized cites
+- `test_horizon.py` — proves the proposed-legislation scan parses/labels bills as NOT-authority (offline)
 - `schema.sql` — production Postgres DDL the SQLite store mirrors
 
 ## Extending

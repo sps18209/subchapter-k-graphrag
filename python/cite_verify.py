@@ -124,6 +124,9 @@ class OnlineVerifier:
     def check(self, citation: str, kind: str):
         try:
             if kind == "regulation":
+                if re.search(r"\bProp\.|REG-\d", citation, re.I):   # proposed regs live in the FR, not eCFR
+                    m = re.search(r"REG-\d+-\d+", citation, re.I)
+                    return self._fedreg(m.group(0) if m else citation)
                 return self._ecfr(citation)
             if kind == "statute":
                 return self._uscode(citation)
@@ -280,10 +283,12 @@ class OnlineVerifier:
         prefix = next((p for k, p in self._IRS_PREFIX if key.startswith(k)), None)
         if not prefix:
             return None
-        year, num = m.group(2)[-2:], f"{int(m.group(3)):02d}"
-        url = f"https://www.irs.gov/pub/irs-drop/{prefix}-{year}-{num}.pdf"
-        if self._status(url) == 200:
-            return {"status": "verified_external", "source": "IRS (irs.gov)", "url": url}
+        year, raw = m.group(2)[-2:], str(int(m.group(3)))
+        url = ""
+        for num in dict.fromkeys((raw, raw.zfill(2))):   # IRS uses both rr-99-6 (old) and n-26-07 (recent)
+            url = f"https://www.irs.gov/pub/irs-drop/{prefix}-{year}-{num}.pdf"
+            if self._status(url) == 200:
+                return {"status": "verified_external", "source": "IRS (irs.gov)", "url": url}
         return {"status": "not_found", "source": "IRS (irs.gov)", "url": url,
                 "note": "not in the IRS recent-guidance folder; older rulings are in the IRB "
                         "archive — verify manually"}
@@ -315,6 +320,49 @@ def corpus_cites(con) -> set:
     return {r[0] for r in con.execute("SELECT citation FROM node")}
 
 
+def audit_corpus(con, verifier=None) -> list[dict]:
+    """Sweep every citation in the corpus against the live primary sources. Each node's citation
+    field may be a single cite, a compound, or a concept/term label; we check each real cite once.
+    Returns one record per distinct cite: {citation, kind, status, source, url}."""
+    verifier = verifier or OnlineVerifier()
+    out, seen = [], set()
+    for raw in sorted(corpus_cites(con)):
+        cites = [raw] if classify(raw) != "unknown" else extract_citations(raw)
+        if not cites:
+            continue  # concept/term node with no embedded citation — nothing to verify
+        for c in cites:
+            if c in seen:
+                continue
+            seen.add(c)
+            kind = classify(c)
+            try:
+                hit = verifier.check(c, kind)
+            except Exception:
+                hit = None
+            rec = {"citation": c, "kind": kind, "status": "unchecked", "source": "", "url": ""}
+            if hit:
+                rec.update(status=hit.get("status", "unchecked"),
+                           source=hit.get("source", ""), url=hit.get("url", ""))
+            out.append(rec)
+    return out
+
+
+def flag_reason(citation: str) -> tuple[str, bool]:
+    """Why a corpus cite didn't confirm at the live source, and whether it's worth REVIEW (True)
+    vs an expected tool limitation (False: proposed regs aren't in eCFR; pre-2010 IRS guidance
+    isn't in the recent drop folder)."""
+    if "Prop." in citation or "REG-" in citation:
+        return ("proposed reg — not codified in eCFR (check the Federal Register)", False)
+    m = re.search(r"(\d{2,4})-\d+", citation)
+    if m:
+        y = int(m.group(1))
+        year = y if y > 100 else (2000 + y if y < 40 else 1900 + y)
+        if year < 2010:
+            return (f"pre-2010 ({year}) — likely in the IRB archive, not the recent IRS folder", False)
+        return (f"recent ({year}) — NOT found at the live source; CONFIRM the citation", True)
+    return ("not found at the live source — verify manually", True)
+
+
 if __name__ == "__main__":
     import argparse
     import graph
@@ -323,11 +371,37 @@ if __name__ == "__main__":
     ap.add_argument("--text", help="extract and verify every citation found in this text")
     ap.add_argument("--source", action="store_true",
                     help="fetch the ACTUAL current text of CITATION from its primary source")
+    ap.add_argument("--audit", action="store_true",
+                    help="sweep EVERY corpus citation against the live primary sources and report")
     args = ap.parse_args()
     con = graph.build(":memory:")
     cites = corpus_cites(con)
     prov = get_verifier()
-    if args.source:
+    if args.audit:
+        recs = audit_corpus(con)
+        confirmed = [r for r in recs if r["status"] == "verified_external"]
+        flagged = [r for r in recs if r["status"] == "not_found"]
+        unchecked = [r for r in recs if r["status"] in ("unchecked", "needs_token")]
+        review = [(r, fr) for r in flagged for fr in [flag_reason(r["citation"])] if fr[1]]
+        expected = [(r, fr) for r in flagged for fr in [flag_reason(r["citation"])] if not fr[1]]
+        print(f"CORPUS CITATION AUDIT — {len(recs)} distinct citations vs live primary sources")
+        print(f"  confirmed at the source:            {len(confirmed)}")
+        print(f"  NEEDS REVIEW (didn't confirm):      {len(review)}")
+        print(f"  expected tool limits (old/proposed):{len(expected)}")
+        print(f"  unchecked (cases need a token, etc):{len(unchecked)}")
+        if review:
+            print("\n--- NEEDS REVIEW: recent cites that did NOT confirm at the source ---")
+            for r, (why, _) in review:
+                print(f"  {r['citation']:<26} {r['kind']:<12} {why}\n      {r['url']}")
+        if expected:
+            print("\n--- EXPECTED LIMITATION (not errors; verify manually if you wish) ---")
+            for r, (why, _) in expected:
+                print(f"  {r['citation']:<26} {r['kind']:<12} {why}")
+        if unchecked:
+            print("\n--- UNCHECKED: no keyless live source for this type ---")
+            for r in unchecked:
+                print(f"  {r['citation']:<26} {r['kind']:<12} {r['source'] or '—'}")
+    elif args.source:
         if not args.citation:
             ap.error("give a CITATION with --source")
         hit = OnlineVerifier().text(args.citation)

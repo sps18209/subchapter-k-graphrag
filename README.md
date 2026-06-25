@@ -38,9 +38,16 @@ python query.py --verify 2026-06-01
 python query.py --compute --inputs '{"beginning_basis":245000,"cash_distributed":465000}'
 ```
 
-`tui.py` is an interactive REPL over the same engine (`ask`, `asof`, `verify`, `compute`,
-`hubs`, `hub`, `node`) — the terminal counterpart to the web demo. The one-shot `query.py`
-is better for scripting and piping.
+`tui.py` is an interactive REPL over the same engine (`ask`, `asof`, `verify`, `cite`,
+`source`, `compute`, `hubs`, `hub`, `node`, `horizon`) — the terminal counterpart to the web
+demo. The one-shot `query.py` is better for scripting and piping.
+
+`assistant.py` (`subk-chat`) is a plain-English front door: it routes natural language to the
+right tool and the engine still produces every answer. With `SUBK_CITE_PROVIDER=online`,
+citations are checked live against their primary source (eCFR / US Code / Federal Register /
+IRS), `source`/`cite` fetch the actual current text, and `python cite_verify.py --audit`
+sweeps the whole corpus against those sources. `horizon.py` separately scans *proposed*
+federal tax bills (Congress.gov / govinfo) — clearly labeled "not law," never in the graph.
 
 `schema.sql` is the production Postgres DDL the SQLite runtime mirrors. See `python/README.md`
 for the four-layer architecture and what is real vs. a stand-in (BM25 for embeddings, SQLite for
