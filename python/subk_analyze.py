@@ -22,6 +22,7 @@ import sys
 
 import subk_see
 import subk_intake
+import subk_llm
 
 CAPABILITIES = """\
 ================ SUBK ANALYZE — capabilities & limits ================
@@ -51,10 +52,12 @@ WHAT IT WILL NOT DO
     whether the allocation HAS substantial economic effect is a conclusion of law you make.
 
 CONFIDENTIALITY BOUNDARY (Rule 1.6)
-  • Ingestion, the fact-frame, and the verified factor tree are 100% LOCAL.
-  • The reasoning step would send the fact-frame + verified law to Anthropic. In this phase it
-    is GATED OFF: nothing leaves the machine. The tool stops at the boundary and shows what it
-    WOULD send once Layer B is built.
+  • Ingestion, the fact-frame, and the verified Layer-A bundle are 100% LOCAL.
+  • The reasoning sandwich (Layer A -> Anthropic -> Layer B) runs ONLY with --run AND
+    ANTHROPIC_API_KEY set. It sends the verified bundle to a pinned model; the model may add only
+    facts that trace to the bundle, and Layer B closure-checks the reply (rejecting invented law)
+    before you see it. Without --run/key the tool stops at the local boundary — nothing leaves the
+    machine. Use a no-train / zero-data-retention account.
 ====================================================================="""
 
 
@@ -103,6 +106,8 @@ def main():
     ap.add_argument("--folder", help="folder of documents to ingest (read-only)")
     ap.add_argument("--facts", help="pasted facts (or @file)")
     ap.add_argument("--form", help="structured fact-frame as JSON (or @file)")
+    ap.add_argument("--run", action="store_true",
+                    help="run the reasoning sandwich (Layer A -> Anthropic -> Layer B); needs ANTHROPIC_API_KEY")
     args = ap.parse_args()
 
     if args.capabilities or not (args.matter or args.folder or args.facts or args.form):
@@ -148,13 +153,52 @@ def main():
         for b in ready["factors_blocked"]:
             print(f"    {b['id']:<14} needs: {', '.join(b['missing'])}")
 
-    print("\n================ LOCAL BOUNDARY ================")
-    print("Nothing has left this machine. The reasoning step (Layer A -> Anthropic -> Layer B) is")
-    print("Phase 1 and is intentionally not executed: the Layer-B verifier that makes it safe to")
-    print("send the fact-frame out isn't built yet. What WOULD be sent, once it is:")
-    print(f"  • {len([1 for v in frame['fields'].values() if v['value'] is not None])} detected facts (above)")
-    print(f"  • the verified factor tree for {subk_see.DOCTRINE} ({len(subk_see.FACTORS)} factors, rooted at {auth['cite']})")
-    print("================================================")
+    # Layer A: the verified bundle (deterministic; this is exactly what the model may use).
+    bundle = subk_llm.build_bundle(frame, auth)
+    print("\n================ LAYER A — VERIFIED BUNDLE (the only material the model may use) ================")
+    print(f"  {len(bundle['items'])} items · cache key {subk_llm.bundle_key(bundle)}")
+    for it in bundle["items"]:
+        print(f"  [{it['id']:<22}] {it['text'][:88]}")
+
+    if not ready["ready"]:
+        print("\nNot ready — supply the missing facts above before running the analysis.")
+        return
+
+    if not (args.run and os.environ.get("ANTHROPIC_API_KEY")):
+        print("\n================ LOCAL BOUNDARY ================")
+        print("Nothing has left this machine. To run the reasoning sandwich (Layer A -> Anthropic ->")
+        print(f"Layer B), set ANTHROPIC_API_KEY and add --run. The bundle above is EXACTLY what would")
+        print(f"be sent to the pinned model ({subk_llm.PINNED_MODEL}); Layer B verifies the reply before")
+        print("you ever see it. Nothing else leaves the machine.")
+        print("================================================")
+        return
+
+    # Phase 1: run the sandwich.
+    print(f"\n*** --run: sending the bundle above to {subk_llm.PINNED_MODEL}. Rule 1.6 — use a")
+    print("    no-train / zero-data-retention account. The reply is closure-checked by Layer B. ***")
+    envelope = subk_llm.analyze(bundle, issue)
+    if not envelope:
+        sys.exit("the model returned nothing (check ANTHROPIC_API_KEY and `pip install anthropic`).")
+    v = subk_llm.layer_b_verify(envelope, bundle["ids"])
+    head = "CLOSED ✓ (all legal content traces to the verified bundle)" if v["closed"] \
+        else "OPEN — review the flagged items below"
+    print(f"\n================ VERIFIED ANALYSIS — Layer B: {head} ================")
+    for p in v["propositions"]:
+        mark = "✓" if p["verdict"] == "ok" else "✗ REJECTED"
+        print(f"  [{mark}] {p['text']}")
+        for prob in p["problems"]:
+            print(f"        ! {prob}")
+    if v["augmentations"]:
+        print("  -- non-legal context (segregated, flagged for review) --")
+        for a in v["augmentations"]:
+            mark = "✓" if a["verdict"] == "ok" else "✗ REJECTED"
+            print(f"  [{mark}] ({a['category']}) {a['text']}  [source: {a['source']}]")
+            for prob in a["problems"]:
+                print(f"        ! {prob}")
+    for g in v["gaps"]:
+        print("  gap:", g)
+    print(f"\n  ULTIMATE QUESTION (yours to decide): {v['ultimate_question']}")
+    print(f"  {v['conclusion']}")
 
 
 if __name__ == "__main__":
