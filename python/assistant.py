@@ -29,6 +29,7 @@ import graph
 import retrieve
 import calculator as calc
 import cite_verify
+import horizon
 
 CALC_FIELDS = [f.name for f in __import__("dataclasses").fields(calc.BasisInputs)]
 _DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
@@ -44,11 +45,14 @@ TOOLS = """Tools (return JSON {"tool": <name>, "args": {...}}):
 - hub        args {"name": str}                                      — one term's formula + authority
 - cite       args {"citation": str}                                  — check whether a citation is real/in-corpus
 - source     args {"citation": str}                                  — fetch the ACTUAL current text of a reg/statute/ruling from the primary source
+- horizon    args {"terms": str or null}                             — scan PROPOSED federal tax bills in Congress (NOT law/authority; pending only)
 Pick exactly one tool. Extract dollar amounts and dates. Use COMPUTE ONLY when the user
 gives or clearly wants a basis CALCULATION (there are dollar figures, or words like
 compute/calculate/figure). A "what/which/why/how does ... work" question is ASK, not compute.
 Use SOURCE when the user wants to READ or QUOTE the authority itself ("what does X say",
 "pull up the text of X", "show me the language of X"); use CITE only to check if it's real.
+Use HORIZON for PENDING / PROPOSED legislation ("any bills on X", "what's coming in Congress",
+"proposed legislation") — these are bills, not enacted law.
 
 Examples:
   "what feeds a partner's outside basis?"            -> {"tool":"ask","args":{"question":"what feeds a partner's outside basis?"}}
@@ -58,7 +62,9 @@ Examples:
   "what's in force as of 2026-06-01?"                -> {"tool":"verify","args":{"as_of":"2026-06-01"}}
   "is IRC 9999 a real cite?"                         -> {"tool":"cite","args":{"citation":"IRC 9999"}}
   "what does Treas. Reg. 1.704-2 actually say?"      -> {"tool":"source","args":{"citation":"Treas. Reg. 1.704-2"}}
-  "pull up the text of IRC 704"                      -> {"tool":"source","args":{"citation":"IRC 704"}}"""
+  "pull up the text of IRC 704"                      -> {"tool":"source","args":{"citation":"IRC 704"}}
+  "any pending bills on carried interest?"           -> {"tool":"horizon","args":{"terms":"carried interest"}}
+  "what tax legislation is coming for partnerships?" -> {"tool":"horizon","args":{}}"""
 
 
 # ---- routers ------------------------------------------------------------------
@@ -73,6 +79,9 @@ def _rules_route(text: str) -> dict:
         return {"tool": "verify", "args": {"as_of": d.group(1)}}
     if re.search(r"\b(list|what).{0,12}\b(terms|hubs|definitions)\b", t):
         return {"tool": "hubs", "args": {}}
+    if re.search(r"\b(pending|proposed|legislation|legislative|horizon|in congress|bills?\s+in\b)\b", t):
+        topic = re.search(r"\b(?:on|about|for|regarding)\s+(.+?)\s*\??$", text.strip(), re.I)
+        return {"tool": "horizon", "args": {"terms": topic.group(1).strip()} if topic else {}}
     if cite and re.search(r"\b(real|exist|valid|check|verify)\b", t):
         return {"tool": "cite", "args": {"citation": text[cite.start():].strip()}}
     if re.search(r"\b(text of|language of|quote|full text|actual text|pull up|read me|show me)\b", t) \
@@ -241,6 +250,14 @@ def run(con, intent: dict, interactive: bool = True) -> str:
         return line
     if tool == "source":
         return _render_source(args.get("citation", ""))
+    if tool == "horizon":
+        terms = args.get("terms")
+        terms = ['"' + terms.strip() + '"'] if isinstance(terms, str) and terms.strip() else None
+        try:
+            return horizon.format_scan(horizon.scan(terms=terms))
+        except Exception as e:
+            return (f"Couldn't reach the legislation source ({e}).\n"
+                    + horizon.DISCLAIMER)
     # ask (default)
     q = args.get("question") or args.get("text") or ""
     return retrieve.assemble(con, retrieve.retrieve(con, q, as_of=args.get("as_of")))
@@ -257,6 +274,7 @@ Type in plain English. The model picks the query; the engine gives the answer.
   COMPUTE outside basis   →  compute: started 245k, distributed 465k
   VERIFY a citation       →  is IRC 9999 a real cite?
   READ the actual law     →  what does Treas. Reg. 1.704-2 say?
+  SCAN proposed bills     →  any pending bills on carried interest?  (NOT law)
   BROWSE the terms        →  list the terms   ·   explain disguised sale
 
 Tips
@@ -320,8 +338,11 @@ def respond(con, text: str, provider: str | None, interactive: bool = True) -> s
     """Always route through the engine; when a model is configured (and SUBK_ASSISTANT_EXPLAIN
     isn't 0), prepend a plain-English summary GROUNDED IN THE LIVE PRIMARY SOURCES the engine
     cited. Disable grounding (faster, no network) with SUBK_EXPLAIN_GROUNDING=0."""
-    detail = run(con, route(text, provider), interactive=interactive)
-    if provider and provider != "none" and os.environ.get("SUBK_ASSISTANT_EXPLAIN", "1") != "0":
+    intent = route(text, provider)
+    detail = run(con, intent, interactive=interactive)
+    # horizon output is self-labeled "NOT law" — don't let the model paraphrase that framing away.
+    if intent.get("tool") != "horizon" and provider and provider != "none" \
+            and os.environ.get("SUBK_ASSISTANT_EXPLAIN", "1") != "0":
         grounding = "" if os.environ.get("SUBK_EXPLAIN_GROUNDING", "1") == "0" else _live_grounding(detail)
         summary = _explain(provider, text, detail, grounding)
         if summary:

@@ -59,6 +59,10 @@ jobs:
         working-directory: python
         run: python test_assistant.py
 
+      - name: Proposed-legislation horizon (offline parsing/labeling)
+        working-directory: python
+        run: python test_horizon.py
+
       - name: JS <-> Python parity (640 checks; needs node)
         working-directory: python
         run: python parity_test.py

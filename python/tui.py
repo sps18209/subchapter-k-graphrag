@@ -46,6 +46,7 @@ _COMMANDS = [
     ("verify [date]", "what's in force / superseded on a date"),
     ("cite <citation>", "check a citation vs corpus + live primary source"),
     ("source <citation>", "fetch the ACTUAL current text from eCFR / US Code / IRS"),
+    ("horizon [terms]", "scan PROPOSED federal tax bills in Congress (NOT law)"),
     ("compute [json]", "deterministic outside-basis calculator"),
     ("hubs", "list the defined terms"),
     ("hub <id>", "a term's formula DAG + connected authority"),
@@ -197,6 +198,23 @@ class SubKShell(cmd.Cmd):
             print(body[:1200] + (DIM("\n  … [excerpt — full current text at the link]") if len(body) > 1200 else ""))
         else:
             print("  " + DIM("full text isn't cleanly extractable here — read it at the link above"))
+
+    def do_horizon(self, arg):
+        "horizon [terms] — scan PROPOSED federal tax bills in Congress (NOT law / NOT authority)"
+        import horizon
+        terms = ['"' + arg.strip() + '"'] if arg.strip() else None
+        try:
+            s = horizon.scan(terms=terms)
+        except Exception as e:
+            print(RE(f"  couldn't reach the legislation source: {e}"))
+            return
+        print(YE("  " + horizon.DISCLAIMER))
+        print(DIM(f"  {s['congress']}th Congress — {s['shown']} of {s['count']} matches"))
+        for b in s["bills"]:
+            print(f"  {GR(b['bill']):<20} {b['date']}  {b['title']}")
+            print("       " + DIM(f"{b['stage']}  ·  {b['url']}"))
+        if not s["bills"]:
+            print(DIM("  (no matching bills found)"))
 
     def do_compute(self, arg):
         "compute [json] — deterministic outside-basis engine; no arg = interactive prompts"

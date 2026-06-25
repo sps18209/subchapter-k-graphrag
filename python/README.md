@@ -112,6 +112,7 @@ basis), so the graph surfaces structure to check, it does not certify it.
 - `query.py` — one-shot CLI
 - `tui.py` — interactive terminal UI / REPL (ask, asof, verify, compute, hubs, hub, node)
 - `assistant.py` — plain-English front door: routes natural language to the right tool (rules / local Ollama model / OpenAI); the engine still produces every answer
+- `horizon.py` — SEPARATE scan of PROPOSED federal tax bills (govinfo BILLS / Congress.gov). Bills are not law and never enter the graph or currency gate; output is labeled "NOT authority". Works with the shared `DEMO_KEY`; set `GOVINFO_API_KEY` for higher limits
 - `test_assistant.py` — proves NL routing + that the engine (not the router) answers
 - `test_subk.py` — 40 checks
 - `parity_test.py` — 640 cross-language checks proving `web-src/engine.js` matches this
