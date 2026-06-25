@@ -297,14 +297,38 @@ class OnlineVerifier:
         if not self.cl_token:
             return {"status": "needs_token", "source": "courtlistener",
                     "note": "set COURTLISTENER_TOKEN (free at courtlistener.com) to verify case cites"}
-        body = json.dumps({"text": citation}).encode("utf-8")
+        hdr = {"Authorization": "Token " + self.cl_token}
+        # 1) citation-lookup resolves a reporter cite ("461 U.S. 300") if one is present.
+        try:
+            req = urllib.request.Request(
+                "https://www.courtlistener.com/api/rest/v4/citation-lookup/",
+                data=json.dumps({"text": citation}).encode("utf-8"),
+                headers={**hdr, "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                data = json.loads(r.read())
+            if isinstance(data, list) and any(item.get("clusters") for item in data):
+                return {"status": "verified_external", "source": "courtlistener"}
+        except Exception:
+            pass
+        # 2) fall back to name search — corpus cites are party names ("Commissioner v. Tufts"),
+        #    which citation-lookup can't resolve. Confirm the distinctive party appears in the top hit.
         req = urllib.request.Request(
-            "https://www.courtlistener.com/api/rest/v4/citation-lookup/", data=body,
-            headers={"Content-Type": "application/json", "Authorization": "Token " + self.cl_token})
+            "https://www.courtlistener.com/api/rest/v4/search/?type=o&q=" + urllib.parse.quote(citation),
+            headers=hdr)
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             data = json.loads(r.read())
-        ok = isinstance(data, list) and any(item.get("clusters") for item in data)
-        return {"status": "verified_external" if ok else "not_found", "source": "courtlistener"}
+        results = data.get("results") or []
+        if results:
+            top = (results[0].get("caseName") or "").lower()
+            parties = [p for p in re.split(r"\bv\.?\s+", citation, flags=re.I) if "commissioner" not in p.lower()]
+            words = re.findall(r"[A-Za-z]{3,}", parties[0]) if parties else []
+            key = words[0].lower() if words else ""
+            if key and key in top:
+                url = results[0].get("absolute_url", "")
+                if url.startswith("/"):
+                    url = "https://www.courtlistener.com" + url
+                return {"status": "verified_external", "source": "courtlistener", "url": url}
+        return {"status": "not_found", "source": "courtlistener"}
 
 
 def get_verifier(provider: str | None = None):
