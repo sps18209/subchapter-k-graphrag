@@ -121,19 +121,24 @@ def _cache_path(key: str) -> str:
     return os.path.join(d, key + ".json")
 
 
-def _masked_user(bundle: dict, question: str):
-    """Build the user payload with FACT/CITE item text MASKED (LAW items left intact). Deterministic,
-    so the masker reconstructs identically on a cache hit. Masking defaults ON for the cloud provider
-    and OFF for local (nothing leaves the machine, so there's nothing to protect from). SUBK_LLM_MASK
-    overrides either way. Returns (user_text, masker)."""
+def _masked_user(bundle: dict, question: str, redactor=None):
+    """Build the user payload. FACT/CITE item text is first REDACTED (real names -> codes, always,
+    if a redactor is given) then MASKED (amounts/EIN -> tokens). LAW items are left intact (the model
+    needs the real reg). Deterministic, so the masker reconstructs identically on a cache hit. Masking
+    defaults ON for the cloud provider, OFF for local; SUBK_LLM_MASK overrides. Returns (user, masker)."""
     masker = mask.Masker()
     default = "1" if provider() == "anthropic" else "0"
-    if os.environ.get("SUBK_LLM_MASK", default) == "0":
-        body, q = bundle["text"], question
-    else:
-        body = "\n".join(f"[{it['id']}] " + (it["text"] if it["kind"] == "law" else masker.mask(it["text"]))
-                         for it in bundle["items"])
-        q = masker.mask(question)
+    do_mask = os.environ.get("SUBK_LLM_MASK", default) != "0"
+
+    def prep(text: str, is_law: bool) -> str:
+        if is_law:
+            return text
+        if redactor is not None:
+            text = redactor.redact(text)        # names -> codes (always, before anything leaves)
+        return masker.mask(text) if do_mask else text
+
+    body = "\n".join(f"[{it['id']}] {prep(it['text'], it['kind'] == 'law')}" for it in bundle["items"])
+    q = prep(question, False)
     user = f"QUESTION: {q}\n\nVERIFIED BUNDLE (the only legal facts you may use):\n{body}"
     return user, masker
 
@@ -177,14 +182,14 @@ def _emit_ollama(user: str) -> dict | None:
         return None
 
 
-def analyze(bundle: dict, question: str, use_cache: bool = True):
-    """Run the middle of the sandwich over the (masked, for cloud) bundle. Returns (envelope, masker):
+def analyze(bundle: dict, question: str, use_cache: bool = True, redactor=None):
+    """Run the middle of the sandwich over the REDACTED + masked bundle. Returns (envelope, masker):
     envelope is the model's structured output or None (no key/SDK/local server → caller stays at the
-    boundary); masker un-masks for local display. Cache key includes the provider; raw client identity
-    never reaches the cloud model or the cache file."""
+    boundary); masker un-masks for local display. Cache key includes the provider; real client names
+    (redacted to codes) and structured identifiers (masked) never reach the model or the cache file."""
     prov = provider()
     path = _cache_path(f"{bundle_key(bundle)}.{prov}")
-    user, masker = _masked_user(bundle, question)   # rebuilt the same way on hit and miss
+    user, masker = _masked_user(bundle, question, redactor)   # rebuilt the same way on hit and miss
     if use_cache and os.path.exists(path):
         with open(path, "r", encoding="utf-8") as fh:
             return json.load(fh), masker

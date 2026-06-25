@@ -23,6 +23,7 @@ import sys
 import subk_see
 import subk_intake
 import subk_llm
+import redact
 
 CAPABILITIES = """\
 ================ SUBK ANALYZE — capabilities & limits ================
@@ -106,13 +107,14 @@ def build_frame(args) -> tuple[dict, dict, str]:
     return frame, ing, ing["facts"]
 
 
-def _interview() -> dict:
-    """Guided, anonymized intake. Collects a party ROSTER as short codes (never real names), then
-    the SEE facts referencing those codes. Real identities never enter the tool."""
+def _interview(redactor) -> dict:
+    """Guided intake. Collects each party's REAL name (kept LOCAL in the redactor so it can be wiped
+    from documents) and derives a code (John Doe -> JoDo); only the code goes into the roster/bundle.
+    Then the SEE facts, referencing those codes."""
     import string
-    print("================ GUIDED INTAKE (keep it anonymized) ================")
-    print("Use SHORT CODES for parties — e.g. first 2 letters of first + last name: Robert Smith -> RoSm.")
-    print("The real name<->code map stays with YOU (privileged); the tool only ever sees the code.\n")
+    print("================ GUIDED INTAKE ================")
+    print("Enter each party's REAL name — it stays on THIS machine and is used to scrub that name out")
+    print("of everything before it's sent. The model only ever sees the derived code (John Doe -> JoDo).\n")
     try:
         n = int((input("How many parties are involved in this allocation issue? ").strip() or "0"))
     except ValueError:
@@ -120,9 +122,14 @@ def _interview() -> dict:
     parties = []
     for i in range(max(n, 0)):
         default = "Party " + (string.ascii_uppercase[i] if i < 26 else str(i + 1))
-        code = input(f"  Party {i + 1} code (e.g. RoSm) [{default}]: ").strip() or default
-        if subk_intake.looks_identifying(code):
-            print("    ! that looks like a real name — prefer a short code (2 of first + 2 of last).")
+        raw = input(f"  Party {i + 1} full name (kept local) — or a code if you prefer [{default}]: ").strip()
+        if not raw:
+            code = default
+        elif redact.looks_like_name(raw):
+            code = redactor.add_name(raw)
+            print(f"    -> code the model will see: {code}  (the real name stays on this machine)")
+        else:
+            code = raw   # already a code
         role = input(f"  Party {i + 1} role (contributing / service / managing) [optional]: ").strip()
         parties.append({"code": code, "role": role})
 
@@ -175,8 +182,9 @@ def main():
                   "--facts @file | --form JSON")
         return
 
+    redactor = redact.Redactor()
     if args.interview:
-        form = _interview()
+        form = _interview(redactor)
         frame = subk_intake.frame_from_form(form)
         ing = {"report": [], "facts": json.dumps(form)}
         issue = (form.get("allocation_at_issue", "") + " " + form.get("parties", "")).strip()
@@ -254,13 +262,32 @@ def main():
         print("===================================================")
         return
 
+    # Pre-send guard: declared names are already scrubbed by the redactor; surface any UN-declared
+    # names in the payload (honorifics / captions / signature blocks) for you to label first.
+    payload = "\n".join(it["text"] for it in bundle["items"] if it["kind"] in ("fact", "cite"))
+    candidates = redact.scan_candidates(payload, redactor)
+    if candidates:
+        if sys.stdin.isatty():
+            print("\nPossible client names in what would be sent — label each (Enter = leave as-is):")
+            for name in candidates:
+                ans = input(f"  '{name}' -> code (Enter to ignore): ").strip()
+                if ans:
+                    redactor.add(name, ans)
+        else:
+            print("\n================ BLOCKED — un-rostered names ================")
+            print("These look like client names in the payload and aren't in your roster:")
+            print("  " + ", ".join(candidates))
+            print("Re-run with --interview to label them. Nothing was sent.")
+            print("============================================================")
+            return
+
     if local:
         print(f"\n*** --run LOCAL: {os.environ.get('SUBK_LLM_OLLAMA_MODEL', 'llama3.2:3b')} via Ollama — nothing")
         print("    leaves this machine. (Smaller local model: lower quality, but Layer B still rejects ungrounded output.) ***")
     else:
         masking = "ON" if os.environ.get("SUBK_LLM_MASK", "1") != "0" else "OFF"
-        print(f"\n*** --run CLOUD: sending the masked bundle to {subk_llm.PINNED_MODEL}. Masking: {masking}. ***")
-    envelope, masker = subk_llm.analyze(bundle, issue)
+        print(f"\n*** --run CLOUD: sending the REDACTED + masked bundle to {subk_llm.PINNED_MODEL}. Masking: {masking}. ***")
+    envelope, masker = subk_llm.analyze(bundle, issue, redactor=redactor)
     if not envelope:
         sys.exit("the model returned nothing (check ANTHROPIC_API_KEY and `pip install anthropic`).")
     v = subk_llm.layer_b_verify(envelope, bundle["ids"])

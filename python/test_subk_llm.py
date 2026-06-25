@@ -101,6 +101,21 @@ def main():
     check("LAW items are NOT masked (model needs the real reg)", "1.704-1(b)(2)(ii)" in user)
     check("FACT identifiers ARE masked in the wire payload", "Acme Holdings LLC" not in user and "[ENTITY_1]" in user)
 
+    print("redaction — real names captured at intake are scrubbed to codes BEFORE send:")
+    import redact
+    r = redact.Redactor()
+    check("derives a code from a real name", r.add_name("John Doe") == "JoDo")
+    check("redacts the full name AND the surname", r.redact("John Doe and Doe signed") == "JoDo and JoDo signed")
+    check("scan flags an un-rostered caption name", "Smith" in redact.scan_candidates("See Smith v. Jones"))
+    check("scan ignores a name already in the roster", "Doe" not in redact.scan_candidates("Officer Doe testified", r))
+    frd = subk_intake.frame_from_form({"allocation_at_issue": "John Doe gets 99% of depreciation",
+                                       "qualified_income_offset": True})
+    brd = subk_llm.build_bundle(frd, {"status": "verified_external"})
+    user, _ = subk_llm._masked_user(brd, "does it have economic effect?", redactor=r)
+    check("a real name in a FACT is replaced by its code in the wire payload",
+          "John Doe" not in user and "JoDo" in user)
+    check("LAW reg text is never redacted (model needs the real reg)", "1.704-1(b)(2)(ii)" in user)
+
     print(f"\nALL {passed} SANDWICH-SAFETY CHECKS PASSED")
 
 
