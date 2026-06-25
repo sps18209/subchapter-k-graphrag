@@ -10,6 +10,7 @@ analysis and REJECTS invented law, prose/array mismatches, and smuggled legal co
     python test_subk_llm.py
 """
 import lawfact
+import mask
 import subk_see
 import subk_intake
 import subk_llm
@@ -87,6 +88,18 @@ def main():
              "augmentations": [{"text": "Depreciation rules changed in 1986.", "category": "HISTORICAL", "source": ""}]}
     check("an uncited augmentation is rejected (must be sourced + flagged)",
           subk_llm.layer_b_verify(nosrc, bundle["ids"])["augmentations"][0]["verdict"] == "rejected")
+
+    print("masking — client identity is tokenized before send, restored locally:")
+    mk = mask.Masker()
+    sent = mk.mask("Acme Holdings LLC paid $245,000 (EIN 12-3456789)")
+    check("entity / amount / EIN are masked", all(t in sent for t in ("[ENTITY_1]", "[AMOUNT_1]", "[EIN_1]")))
+    check("masking round-trips losslessly", mk.unmask(sent) == "Acme Holdings LLC paid $245,000 (EIN 12-3456789)")
+    fr2 = subk_intake.frame_from_form({"allocation_at_issue": "Acme Holdings LLC gets 99% of depreciation",
+                                       "capital_account_balances": "A $100,000"})
+    b2 = subk_llm.build_bundle(fr2, {"status": "verified_external"})
+    user, _ = subk_llm._masked_user(b2, "does the allocation have economic effect?")
+    check("LAW items are NOT masked (model needs the real reg)", "1.704-1(b)(2)(ii)" in user)
+    check("FACT identifiers ARE masked in the wire payload", "Acme Holdings LLC" not in user and "[ENTITY_1]" in user)
 
     print(f"\nALL {passed} SANDWICH-SAFETY CHECKS PASSED")
 

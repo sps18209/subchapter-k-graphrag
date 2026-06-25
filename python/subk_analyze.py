@@ -53,11 +53,14 @@ WHAT IT WILL NOT DO
 
 CONFIDENTIALITY BOUNDARY (Rule 1.6)
   • Ingestion, the fact-frame, and the verified Layer-A bundle are 100% LOCAL.
-  • The reasoning sandwich (Layer A -> Anthropic -> Layer B) runs ONLY with --run AND
-    ANTHROPIC_API_KEY set. It sends the verified bundle to a pinned model; the model may add only
-    facts that trace to the bundle, and Layer B closure-checks the reply (rejecting invented law)
-    before you see it. Without --run/key the tool stops at the local boundary — nothing leaves the
-    machine. Use a no-train / zero-data-retention account.
+  • The sandwich runs ONLY with --run, ANTHROPIC_API_KEY, AND SUBK_LLM_ZDR_CONFIRMED=1 (your
+    attestation that the account is no-train / zero-data-retention; the pinned model supports ZDR).
+  • MASKING: before anything is sent, client identifiers in the FACT items are replaced with local
+    tokens ([ENTITY_1], [AMOUNT_1], [EIN_1], …). The model reasons over tokens and never sees raw
+    identity; the map never leaves the machine and is un-masked locally for your display. Public
+    LAW text is not masked. (SUBK_LLM_MASK=0 disables it.)
+  • Layer B closure-checks the reply before you see it. Without the gates the tool stops at the
+    local boundary — nothing leaves the machine.
 ====================================================================="""
 
 
@@ -173,13 +176,27 @@ def main():
         print("================================================")
         return
 
-    # Phase 1: run the sandwich.
-    print(f"\n*** --run: sending the bundle above to {subk_llm.PINNED_MODEL}. Rule 1.6 — use a")
-    print("    no-train / zero-data-retention account. The reply is closure-checked by Layer B. ***")
-    envelope = subk_llm.analyze(bundle, issue)
+    # Phase 1: run the sandwich. Rule 1.6 attestation gate — refuse until the operator confirms
+    # the Anthropic account is no-train / zero-data-retention (code can't verify it; it must attest).
+    if os.environ.get("SUBK_LLM_ZDR_CONFIRMED") != "1":
+        print("\n================ BLOCKED (Rule 1.6) ================")
+        print("Refusing to send client facts. Set SUBK_LLM_ZDR_CONFIRMED=1 to attest that your")
+        print(f"Anthropic account is configured no-train / zero-data-retention and uses {subk_llm.PINNED_MODEL}")
+        print("(which supports ZDR). Identifiers are masked regardless, but the attestation is required.")
+        print("===================================================")
+        return
+    masking = "ON (identifiers masked before send)" if os.environ.get("SUBK_LLM_MASK", "1") != "0" else "OFF"
+    print(f"\n*** --run: sending the MASKED bundle to {subk_llm.PINNED_MODEL}. Masking: {masking}. ***")
+    envelope, masker = subk_llm.analyze(bundle, issue)
     if not envelope:
         sys.exit("the model returned nothing (check ANTHROPIC_API_KEY and `pip install anthropic`).")
     v = subk_llm.layer_b_verify(envelope, bundle["ids"])
+    for p in v["propositions"]:          # un-mask locally for display (the map never left the machine)
+        p["text"] = masker.unmask(p["text"])
+    for a in v["augmentations"]:
+        a["text"], a["source"] = masker.unmask(a["text"]), masker.unmask(a["source"])
+    v["ultimate_question"] = masker.unmask(v["ultimate_question"])
+    v["gaps"] = [masker.unmask(g) for g in v["gaps"]]
     head = "CLOSED ✓ (all legal content traces to the verified bundle)" if v["closed"] \
         else "OPEN — review the flagged items below"
     print(f"\n================ VERIFIED ANALYSIS — Layer B: {head} ================")
