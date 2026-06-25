@@ -167,6 +167,24 @@ def roster_text(parties: list) -> str:
     return "; ".join(p["code"] + (f" ({p['role']})" if p.get("role") else "") for p in parties)
 
 
+_PARTNER_ROLES = {"contributing", "service", "managing", "limited", "general", "capital"}
+
+
+def role_label(role: str, used: set) -> str:
+    """Turn a role into the party's canonical, FUNCTIONAL label — what it truly is in the deal, not
+    a name or a name-derived code. 'contributing' -> 'Contributing partner'; 'employee' -> 'Employee';
+    blank -> 'Party'. Disambiguated with a number if the same role recurs (Plaintiff, Plaintiff 2)."""
+    base = (role or "").strip().lower() or "party"
+    if base in _PARTNER_ROLES and "partner" not in base:
+        base += " partner"
+    base = base[:1].upper() + base[1:]
+    label, n = base, 2
+    while label in used:
+        label, n = f"{base} {n}", n + 1
+    used.add(label)
+    return label
+
+
 def frame_from_form(form: dict) -> dict:
     """Light path: attorney-supplied dict of field -> value. Quote = the supplied value, source =
     'attorney input'. Unknown keys are ignored; only the closed SEE vocabulary is accepted."""

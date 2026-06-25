@@ -31,9 +31,9 @@ DOCTRINE WIRED:  Substantial economic effect only  (IRC 704(b); Treas. Reg. 1.70
                  Disguised sale, §1.701-2 anti-abuse, etc. are NOT wired yet.
 
 HOW TO INPUT / WHERE FILES COME FROM
-  • Guided + ANONYMIZED (recommended): --interview asks how many parties and their short CODES
-        (e.g. RoSm = Robert Smith) — never real names — then the facts. Or pass the roster directly:
-        --parties "RoSm:contributing, ToJo:service". The real name<->code map stays with YOU.
+  • Guided + ROLE-BASED (recommended): --interview asks each party's real name (kept LOCAL, scrubbed
+        everywhere before send) and what they ARE in the deal; the analysis represents each party by
+        ROLE — "the contributing partner", never a name or a code. Or: --parties "John Doe:contributing".
   • Folder (real matters): ~/subk-matters/<matter>/  (created for you; home dir because macOS
         blocks Terminal writes to ~/Downloads). Drop the agreement + capital-account statements there.
   • Light path: --facts (paste/notes) or --form (structured JSON) for hypotheticals & study.
@@ -107,37 +107,47 @@ def build_frame(args) -> tuple[dict, dict, str]:
     return frame, ing, ing["facts"]
 
 
+def _parties_to_roster(pairs: list, redactor) -> list:
+    """pairs = [(raw, role)]. Represent each party by its FUNCTIONAL ROLE (what it truly is in the
+    deal) — never a name or a code. Any real NAME is registered in the redactor mapped to its role
+    label, so the name is scrubbed to its role everywhere before send. Returns the role labels."""
+    used, labels = set(), []
+    for raw, role in pairs:
+        label = subk_intake.role_label(role, used)
+        if raw and redact.looks_like_name(raw):
+            redactor.add_name(raw, code=label)      # John Doe -> 'Contributing partner'
+        labels.append(label)
+    return labels
+
+
 def _interview(redactor) -> dict:
-    """Guided intake. Collects each party's REAL name (kept LOCAL in the redactor so it can be wiped
-    from documents) and derives a code (John Doe -> JoDo); only the code goes into the roster/bundle.
-    Then the SEE facts, referencing those codes."""
-    import string
+    """Guided intake. Collects each party's REAL name (kept LOCAL, scrubbed before send) and what it
+    IS in the deal; the analysis represents each party by its ROLE — never a name or code."""
     print("================ GUIDED INTAKE ================")
-    print("Enter each party's REAL name — it stays on THIS machine and is used to scrub that name out")
-    print("of everything before it's sent. The model only ever sees the derived code (John Doe -> JoDo).\n")
+    print("Enter each party's REAL name (stays on THIS machine) and what they ARE in the deal. The")
+    print("name is scrubbed everywhere before send; the analysis represents each party by ROLE")
+    print("(e.g. 'the contributing partner') — never a name or a code.\n")
     try:
         n = int((input("How many parties are involved in this allocation issue? ").strip() or "0"))
     except ValueError:
         n = 0
-    parties = []
+    pairs = []
     for i in range(max(n, 0)):
-        default = "Party " + (string.ascii_uppercase[i] if i < 26 else str(i + 1))
-        raw = input(f"  Party {i + 1} full name (kept local) — or a code if you prefer [{default}]: ").strip()
-        if not raw:
-            code = default
-        elif redact.looks_like_name(raw):
-            code = redactor.add_name(raw)
-            print(f"    -> code the model will see: {code}  (the real name stays on this machine)")
-        else:
-            code = raw   # already a code
-        role = input(f"  Party {i + 1} role (contributing / service / managing) [optional]: ").strip()
-        parties.append({"code": code, "role": role})
+        raw = input(f"  Party {i + 1} full name (kept local) — or Enter if unknown: ").strip()
+        role = input(f"  Party {i + 1} role — what they ARE (contributing / service / managing partner; "
+                     "or employee, plaintiff, …): ").strip()
+        pairs.append((raw, role))
+    labels = _parties_to_roster(pairs, redactor)
+    for (raw, _), label in zip(pairs, labels):
+        lead = f"'{raw}' -> " if (raw and redact.looks_like_name(raw)) else ""
+        print(f"    {lead}represented in the analysis as: {label}")
 
     form = {}
-    if parties:
-        form["parties"] = subk_intake.roster_text(parties)
-    print("\nNow the facts — reference the codes above; keep amounts vague if you prefer.")
-    form["allocation_at_issue"] = input("  Allocation being tested (e.g. '99% depreciation to RoSm'): ").strip()
+    if labels:
+        form["parties"] = "; ".join(labels)
+    print("\nNow the facts — refer to parties by ROLE (e.g. 'the contributing partner').")
+    form["allocation_at_issue"] = input(
+        "  Allocation being tested (e.g. '99% of depreciation to the contributing partner'): ").strip()
 
     def yn(q):
         a = input(f"  {q} [y/N/? unknown]: ").strip().lower()
@@ -193,7 +203,8 @@ def main():
         if frame is None:
             sys.exit("no input resolved — see --capabilities")
         if args.parties:
-            roster = subk_intake.roster_text(subk_intake.parse_parties(args.parties))
+            parsed = subk_intake.parse_parties(args.parties)
+            roster = "; ".join(_parties_to_roster([(p["code"], p["role"]) for p in parsed], redactor))
             frame["fields"]["parties"] = {"value": roster, "quote": roster, "source": "attorney input"}
 
     scope = subk_intake.scope_check(issue)

@@ -68,6 +68,19 @@ def main():
     fr = si.frame_from_form({"allocation_at_issue": "x", "parties": si.roster_text(parties)})
     check("the roster enters the frame as a fact field", fr["fields"]["parties"]["value"] == "RoSm (contributing); ToJo (service)")
 
+    print("role-based representation (parties are what they ARE, not names/codes):")
+    used = set()
+    check("a partner role becomes a functional label", si.role_label("contributing", used) == "Contributing partner")
+    check("a recurring role is disambiguated", si.role_label("contributing", used) == "Contributing partner 2")
+    check("a non-partner role is kept as-is", si.role_label("plaintiff", set()) == "Plaintiff")
+    import subk_analyze
+    import redact
+    rd = redact.Redactor()
+    labels = subk_analyze._parties_to_roster([("John Doe", "contributing"), ("handle", "service")], rd)
+    check("roster labels are ROLES, not the name/handle", labels == ["Contributing partner", "Service partner"])
+    check("a real name scrubs to its ROLE label (not a code)",
+          rd.redact("John Doe contributed land") == "Contributing partner contributed land")
+
     print(f"\nALL {passed} ANALYZER-CONTRACT CHECKS PASSED")
 
 
