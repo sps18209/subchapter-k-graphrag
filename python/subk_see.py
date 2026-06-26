@@ -79,6 +79,29 @@ PROVISION_PATTERNS = {
     "liquidation_per_positive_ca": r"liquidat[^.]{0,80}capital account",
 }
 
+# Doctrine-aware framing used by the runtime (system prompt, manifest, interview). Keeping these
+# WITH the doctrine model means a new doctrine drops in with no spine edits.
+DESCRIPTION = "the substantial-economic-effect test (IRC 704(b); Treas. Reg. 1.704-1(b))"
+EXAMPLE_TAG = "[LAW:1.704-1(b)(2)(ii)(b)]"
+ULTIMATE_CONCLUSION_PHRASE = "whether the allocation HAS substantial economic effect"
+ISSUE_FIELDS = ["allocation_at_issue"]   # principal field(s) used to compose the issue string
+
+# Interview script — each entry: (field, kind, prompt). kind is 'text' or 'yn'.
+INTERVIEW_SCRIPT = [
+    ("allocation_at_issue", "text",
+     "Allocation being tested (e.g. '99% of depreciation to the contributing partner')"),
+    ("capital_account_maintenance", "yn",
+     "Does the agreement maintain capital accounts per Reg. 1.704-1(b)(2)(iv)?"),
+    ("liquidation_per_positive_ca", "yn",
+     "Are liquidating distributions made per positive capital accounts?"),
+    ("deficit_restoration_obligation", "yn",
+     "Is there an UNCONDITIONAL deficit-restoration obligation?"),
+    ("qualified_income_offset", "yn",
+     "Does the agreement contain a qualified income offset?"),
+    ("capital_account_balances", "text", "Capital-account balances (use ROLE labels; vague amounts OK)"),
+    ("tax_motivation", "text", "Any facts suggesting the allocation is tax-motivated?"),
+]
+
 
 def empty_frame() -> dict:
     return {"doctrine": DOCTRINE,

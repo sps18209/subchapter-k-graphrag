@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-subk_analyze.py — orchestrator for the substantial-economic-effect analyzer (Phase 0).
+subk_analyze.py — orchestrator for the fact-intensive doctrine analyzer.
 
 Principle (same as the rest of this project): the model PROPOSES, deterministic code GATES.
 Phase 0 builds and proves the RELIABILITY CONTRACT — intake, scope, sufficiency, and the
@@ -44,7 +44,7 @@ HOW TO INPUT / WHERE FILES COME FROM
 
 WHAT CAN BE INGESTED
   • File types: .txt, .md, searchable .pdf (needs pdfplumber), .docx (needs python-docx).
-  • Subject:    §704(b) allocation / economic-effect questions.
+  • Subject:    any of the wired doctrines above (picked by --doctrine or auto-detected).
 
 WHAT CANNOT BE INGESTED / IS DECLINED  (so you know the edges)
   • Other doctrines (declined as out of scope until wired).
@@ -54,8 +54,8 @@ WHAT CANNOT BE INGESTED / IS DECLINED  (so you know the edges)
     reports which factors it CANNOT reach instead of inventing them.
 
 WHAT IT WILL NOT DO
-  • It does not reach the ultimate legal conclusion. It produces a factor-by-factor work-up;
-    whether the allocation HAS substantial economic effect is a conclusion of law you make.
+  • It does not reach the ultimate legal conclusion of the picked doctrine. It produces a
+    factor-by-factor work-up; the conclusion of law is yours to make.
 
 CONFIDENTIALITY BOUNDARY (Rule 1.6)
   • ANONYMIZE AT SOURCE: enter parties as short codes (--interview / --parties), so no real name
@@ -128,22 +128,22 @@ def _parties_to_roster(pairs: list, redactor) -> list:
     return labels
 
 
-def _interview(redactor) -> dict:
-    """Guided intake. Collects each party's REAL name (kept LOCAL, scrubbed before send) and what it
-    IS in the deal; the analysis represents each party by its ROLE — never a name or code."""
-    print("================ GUIDED INTAKE ================")
-    print("Enter each party's REAL name (stays on THIS machine) and what they ARE in the deal. The")
-    print("name is scrubbed everywhere before send; the analysis represents each party by ROLE")
-    print("(e.g. 'the contributing partner') — never a name or a code.\n")
+def _interview(redactor, doctrine) -> dict:
+    """Guided intake — DOCTRINE-DRIVEN. The party section is universal (name -> role label, scrubbed
+    before send); the rest walks the picked doctrine's INTERVIEW_SCRIPT so a new doctrine drops in
+    its own questions without orchestrator edits. Real names stay on this machine."""
+    print(f"================ GUIDED INTAKE — {doctrine.DOCTRINE} ================")
+    print(f"Analyzing {doctrine.DESCRIPTION}. Enter each party's REAL name (stays on THIS machine)")
+    print("and what they ARE in the deal; the analysis represents each party by ROLE — never a name.\n")
     try:
-        n = int((input("How many parties are involved in this allocation issue? ").strip() or "0"))
+        n = int((input("How many parties are involved? ").strip() or "0"))
     except ValueError:
         n = 0
     pairs = []
     for i in range(max(n, 0)):
         raw = input(f"  Party {i + 1} full name (kept local) — or Enter if unknown: ").strip()
-        role = input(f"  Party {i + 1} role — what they ARE (contributing / service / managing partner; "
-                     "or employee, plaintiff, …): ").strip()
+        role = input(f"  Party {i + 1} role — what they ARE "
+                     "(contributing / service / managing partner; or employee, plaintiff, …): ").strip()
         pairs.append((raw, role))
     labels = _parties_to_roster(pairs, redactor)
     for (raw, _), label in zip(pairs, labels):
@@ -154,33 +154,27 @@ def _interview(redactor) -> dict:
     if labels:
         form["parties"] = "; ".join(labels)
     print("\nNow the facts — refer to parties by ROLE (e.g. 'the contributing partner').")
-    form["allocation_at_issue"] = input(
-        "  Allocation being tested (e.g. '99% of depreciation to the contributing partner'): ").strip()
 
     def yn(q):
         a = input(f"  {q} [y/N/? unknown]: ").strip().lower()
-        return True if a.startswith("y") else (None if a.startswith("?") else False if a.startswith("n") else None)
+        return True if a.startswith("y") else (None if a.startswith("?") else
+                                                False if a.startswith("n") else None)
 
-    for field, q in [
-        ("capital_account_maintenance", "Does the agreement maintain capital accounts per Reg. 1.704-1(b)(2)(iv)?"),
-        ("liquidation_per_positive_ca", "Are liquidating distributions made per positive capital accounts?"),
-        ("deficit_restoration_obligation", "Is there an UNCONDITIONAL deficit-restoration obligation?"),
-        ("qualified_income_offset", "Does the agreement contain a qualified income offset?"),
-    ]:
-        v = yn(q)
-        if v is not None:
-            form[field] = v
-    for field, q in [("capital_account_balances", "Capital-account balances (use codes; vague amounts OK)"),
-                     ("tax_motivation", "Any facts suggesting the allocation is tax-motivated?")]:
-        a = input(f"  {q} [optional]: ").strip()
-        if a:
-            form[field] = a
+    for field, kind, prompt in doctrine.INTERVIEW_SCRIPT:
+        if kind == "yn":
+            v = yn(prompt)
+            if v is not None:
+                form[field] = v
+        else:                                  # 'text' (or any future kind treated as free-form)
+            a = input(f"  {prompt} [optional]: ").strip()
+            if a:
+                form[field] = a
     print("===================================================================\n")
     return form
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Substantial-economic-effect analyzer (Phase 0: intake + contract)")
+    ap = argparse.ArgumentParser(description="Fact-intensive doctrine analyzer (intake + reliability contract + verified sandwich)")
     ap.add_argument("--capabilities", action="store_true", help="print what this tool can and cannot do")
     ap.add_argument("--matter", help="matter name (uses ~/subk-matters/<slug>/)")
     ap.add_argument("--folder", help="folder of documents to ingest (read-only)")
@@ -222,10 +216,12 @@ def main():
         doctrine = subk_see                  # safe default — SEE was the original wired doctrine
 
     if args.interview:
-        form = _interview(redactor)
+        form = _interview(redactor, doctrine)
         frame = subk_intake.frame_from_form(form, doctrine=doctrine)
         ing = {"report": [], "facts": json.dumps(form)}
-        issue = (form.get("allocation_at_issue", "") + " " + form.get("parties", "")).strip()
+        # Compose the issue text from the doctrine's principal ISSUE_FIELDS (+ roster) so the model
+        # receives a question framed in the picked doctrine, not SEE's allocation_at_issue.
+        issue = " ".join([form.get(f, "") for f in doctrine.ISSUE_FIELDS] + [form.get("parties", "")]).strip()
     else:
         frame, ing, issue = build_frame(args, doctrine=doctrine)
         if frame is None:

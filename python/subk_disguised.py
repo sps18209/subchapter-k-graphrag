@@ -131,6 +131,59 @@ PROVISION_PATTERNS = {
                               r"qualified liability)",
 }
 
+# Doctrine-aware framing for the runtime (system prompt, manifest, interview).
+DESCRIPTION = "the disguised-sale test (IRC 707(a)(2)(B); Treas. Reg. 1.707-3 to -5)"
+EXAMPLE_TAG = "[LAW:1.707-3(c)]"
+ULTIMATE_CONCLUSION_PHRASE = ("whether the contribution + distribution IS a disguised sale of "
+                              "property (or of a partnership interest)")
+ISSUE_FIELDS = ["contribution_described", "distribution_described"]
+
+# Interview script — each entry: (field, kind, prompt). kind is 'text' or 'yn'.
+INTERVIEW_SCRIPT = [
+    ("contribution_described", "text",
+     "Describe the CONTRIBUTION — what was transferred, when, by which role"),
+    ("distribution_described", "text",
+     "Describe the DISTRIBUTION — what was distributed, when, to which role"),
+    ("transfers_within_two_years", "yn",
+     "Did the contribution and the distribution occur within 2 YEARS of each other?"),
+    ("liability_encumbrance", "yn",
+     "Was the contributed property subject to a liability (mortgage, encumbrance, qualified liability)?"),
+    # The 10 facts-and-circumstances factors (Reg. 1.707-3(b)(2)(i)-(x)).
+    ("timing_amount_certainty", "yn",
+     "At the time of contribution, were the TIMING and AMOUNT of the distribution determinable "
+     "with reasonable certainty?"),
+    ("legally_enforceable_right", "yn",
+     "Did the transferor have a LEGALLY ENFORCEABLE RIGHT to the distribution?"),
+    ("entrepreneurial_risk", "yn",
+     "Was the right SECURED (escrow / letter of credit) so the distribution wasn't subject to "
+     "entrepreneurial risk?"),
+    ("disproportionate_distribution", "yn",
+     "Was the distribution DISPROPORTIONATE relative to the partner's interest?"),
+    ("special_distribution_right", "yn",
+     "Did the distributee have a SPECIAL right to receive operating cash flow?"),
+    ("distribution_vs_income", "text",
+     "Size of the distribution relative to the partner's formula share of partnership income "
+     "(e.g. 'roughly equal' / 'far exceeds')"),
+    ("obligation_to_return", "yn",
+     "Does the distributee have any OBLIGATION TO RETURN the distribution?"),
+    ("binding_agreement", "yn",
+     "Was the right to the distribution covered by a BINDING obligation (not partnership "
+     "discretion)?"),
+    ("anticipatory_cash_holding", "yn",
+     "Did the partnership hold cash / marketable securities in EXCESS of reasonable business needs?"),
+    ("sale_equivalent_circumstances", "text",
+     "Any other circumstances suggesting the contribution + distribution was, in substance, a sale"),
+    # Exceptions.
+    ("guaranteed_payment", "yn",
+     "Is the distribution a GUARANTEED PAYMENT for capital (Reg. 1.707-4(a))?"),
+    ("preferred_return", "yn",
+     "Is the distribution a reasonable PREFERRED RETURN (Reg. 1.707-4(a))?"),
+    ("operating_cash_flow", "yn",
+     "Is the distribution an OPERATING CASH FLOW distribution (Reg. 1.707-4(b))?"),
+    ("preformation_expenditures", "yn",
+     "Is the distribution a reimbursement of PREFORMATION capital expenditures (Reg. 1.707-4(d))?"),
+]
+
 
 def empty_frame() -> dict:
     return {"doctrine": DOCTRINE,

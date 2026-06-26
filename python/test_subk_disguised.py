@@ -93,6 +93,27 @@ def main():
     check("bundle carries DS.* LAW ids", any("LAW:DS." in i["id"] for i in bundle["items"]))
     check("bundle does NOT carry SEE factor ids", not any("LAW:EE." in i["id"] for i in bundle["items"]))
 
+    print("doctrine-aware framing — system prompt + interview are NOT hard-coded to SEE:")
+    sp_see = subk_llm.system_prompt(subk_see)
+    sp_ds = subk_llm.system_prompt(subk_disguised)
+    check("SEE system prompt names the SEE test", "substantial-economic-effect" in sp_see)
+    check("DS system prompt names the DS test (not SEE)",
+          "disguised-sale" in sp_ds and "substantial-economic-effect" not in sp_ds)
+    check("DS prompt uses a 1.707 example tag, not 1.704", "1.707" in sp_ds and "1.704" not in sp_ds)
+    check("DS prompt forbids the DS ultimate conclusion (not SEE's)",
+          "disguised sale" in sp_ds and "HAS substantial economic effect" not in sp_ds)
+    check("the universal closure rule is in both", all("TRACE ENTIRELY TO THE PROVIDED BUNDLE" in s
+                                                       for s in (sp_see, sp_ds)))
+    check("SEE declares its own interview script", isinstance(subk_see.INTERVIEW_SCRIPT, list)
+          and len(subk_see.INTERVIEW_SCRIPT) >= 4)
+    check("DS declares its own interview script with the 10 F&C fields",
+          {field for field, _, _ in subk_disguised.INTERVIEW_SCRIPT}
+              >= {"contribution_described", "distribution_described", "transfers_within_two_years",
+                  "legally_enforceable_right", "binding_agreement", "guaranteed_payment"})
+    check("interview script only references real doctrine fields (no typos)",
+          all(field in subk_disguised.FRAME_FIELDS for field, _, _ in subk_disguised.INTERVIEW_SCRIPT)
+          and all(field in subk_see.FRAME_FIELDS for field, _, _ in subk_see.INTERVIEW_SCRIPT))
+
     print("Layer B closure under the new doctrine — grounded analysis is ACCEPTED:")
     good = {
         "propositions": [

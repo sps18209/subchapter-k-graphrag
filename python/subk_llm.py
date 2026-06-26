@@ -60,22 +60,27 @@ ENVELOPE_SCHEMA = {
     }, "required": ["propositions", "augmentations", "gaps", "ultimate_question"],
 }
 
-SYSTEM_PROMPT = (
-    "You analyze a substantial-economic-effect question (IRC 704(b)). You are sandwiched between "
-    "two deterministic verification layers and must obey the closure rule:\n"
-    "THE LEGAL CONTENT OF YOUR OUTPUT MUST TRACE ENTIRELY TO THE PROVIDED BUNDLE.\n"
-    "- The bundle lists VERIFIED items, each with a stable ID (LAW:…, CITE:…, FACT:…). These are "
-    "the ONLY legal facts you may rely on.\n"
-    "- Map the facts to the factors of the test. Every LEGAL proposition must (a) carry an inline "
-    "tag like [LAW:1.704-1(b)(2)(ii)(b)] in its text AND (b) list those same IDs in `supports`. "
-    "Never assert a law, cite, or legal fact that isn't a bundle ID.\n"
-    "- Do NOT state the ultimate legal conclusion (whether the allocation HAS substantial economic "
-    "effect) — that is the attorney's call. Put the precise question in `ultimate_question`.\n"
-    "- You MAY add non-legal context ONLY in `augmentations`, each in one closed category "
-    "(HISTORICAL/STATISTIC/ECONOMIC/FINANCIAL/BUSINESS), each with a `source`. An augmentation may "
-    "never state a legal status or consequence.\n"
-    "- List anything you lacked in `gaps`."
-)
+def system_prompt(doctrine) -> str:
+    """The model is given a doctrine-aware system prompt — built from the doctrine module's own
+    DESCRIPTION, EXAMPLE_TAG, and ULTIMATE_CONCLUSION_PHRASE — so the two halves of the sandwich
+    can never disagree on what's being analyzed. The closure rule and the augmentation contract
+    are universal."""
+    return (
+        f"You analyze {doctrine.DESCRIPTION}. You are sandwiched between two deterministic "
+        "verification layers and must obey the closure rule:\n"
+        "THE LEGAL CONTENT OF YOUR OUTPUT MUST TRACE ENTIRELY TO THE PROVIDED BUNDLE.\n"
+        "- The bundle lists VERIFIED items, each with a stable ID (LAW:…, CITE:…, FACT:…). These "
+        "are the ONLY legal facts you may rely on.\n"
+        "- Map the facts to the factors of the test. Every LEGAL proposition must (a) carry an "
+        f"inline tag like {doctrine.EXAMPLE_TAG} in its text AND (b) list those same IDs in "
+        "`supports`. Never assert a law, cite, or legal fact that isn't a bundle ID.\n"
+        f"- Do NOT state the ultimate legal conclusion ({doctrine.ULTIMATE_CONCLUSION_PHRASE}) — "
+        "that is the attorney's call. Put the precise question in `ultimate_question`.\n"
+        "- You MAY add non-legal context ONLY in `augmentations`, each in one closed category "
+        "(HISTORICAL/STATISTIC/ECONOMIC/FINANCIAL/BUSINESS), each with a `source`. An augmentation "
+        "may never state a legal status or consequence.\n"
+        "- List anything you lacked in `gaps`."
+    )
 
 
 # ---- Layer A: assemble the verified bundle ----------------------------------------------------
@@ -147,7 +152,7 @@ def _masked_user(bundle: dict, question: str, redactor=None):
     return user, masker
 
 
-def _emit_anthropic(user: str) -> dict | None:
+def _emit_anthropic(user: str, sysprompt: str) -> dict | None:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     try:
@@ -156,8 +161,8 @@ def _emit_anthropic(user: str) -> dict | None:
         return None
     client = anthropic.Anthropic()
     resp = client.messages.create(
-        model=os.environ.get("SUBK_LLM_MODEL", PINNED_MODEL), max_tokens=8000, system=SYSTEM_PROMPT,
-        tools=[{"name": "emit_analysis", "description": "Emit the structured SEE analysis.",
+        model=os.environ.get("SUBK_LLM_MODEL", PINNED_MODEL), max_tokens=8000, system=sysprompt,
+        tools=[{"name": "emit_analysis", "description": "Emit the structured doctrine analysis.",
                 "input_schema": ENVELOPE_SCHEMA, "strict": True}],
         tool_choice={"type": "tool", "name": "emit_analysis"},
         messages=[{"role": "user", "content": user}],
@@ -166,7 +171,7 @@ def _emit_anthropic(user: str) -> dict | None:
                  if getattr(b, "type", None) == "tool_use" and b.name == "emit_analysis"), None)
 
 
-def _emit_ollama(user: str) -> dict | None:
+def _emit_ollama(user: str, sysprompt: str) -> dict | None:
     """Fully local: Ollama with JSON-schema structured output. Nothing leaves the machine. A weak
     local model can only produce a weak or malformed envelope — Layer B rejects anything ungrounded,
     so it can never present invented law as verified."""
@@ -174,7 +179,7 @@ def _emit_ollama(user: str) -> dict | None:
     url = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat"
     model = os.environ.get("SUBK_LLM_OLLAMA_MODEL", "llama3.2:3b")
     payload = {"model": model, "stream": False, "options": {"temperature": 0}, "format": ENVELOPE_SCHEMA,
-               "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]}
+               "messages": [{"role": "system", "content": sysprompt}, {"role": "user", "content": user}]}
     try:
         req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -245,7 +250,11 @@ def analyze(bundle: dict, question: str, use_cache: bool = True, redactor=None):
     model = (os.environ.get("SUBK_LLM_OLLAMA_MODEL", "llama3.2:3b") if prov == "ollama"
              else os.environ.get("SUBK_LLM_MODEL", PINNED_MODEL))
     _egress_log(prov, model, key, user, redactor, masker)     # <- provable record of exactly what left
-    envelope = _emit_ollama(user) if prov == "ollama" else _emit_anthropic(user)
+    # Build a doctrine-aware system prompt so the model is told exactly the doctrine the bundle is for.
+    import subk_doctrine
+    d = subk_doctrine.resolve(bundle.get("doctrine", "")) or subk_see
+    sp = system_prompt(d)
+    envelope = _emit_ollama(user, sp) if prov == "ollama" else _emit_anthropic(user, sp)
     if envelope is not None and use_cache:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(envelope, fh, indent=2)
