@@ -75,6 +75,10 @@ jobs:
         working-directory: python
         run: python test_subk_disguised.py
 
+      - name: Anti-abuse doctrine — pluggable architecture (offline)
+        working-directory: python
+        run: python test_subk_antiabuse.py
+
       - name: JS <-> Python parity (640 checks; needs node)
         working-directory: python
         run: python parity_test.py

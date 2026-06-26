@@ -30,8 +30,11 @@ CAPABILITIES = """\
 ================ SUBK ANALYZE — capabilities & limits ================
 DOCTRINES WIRED: Substantial economic effect (IRC 704(b); Treas. Reg. 1.704-1(b))
                  Disguised sale         (IRC 707(a)(2)(B); Treas. Reg. 1.707-3 to -5)
-                 §1.701-2 anti-abuse and others are NOT wired yet. Pick with --doctrine see|disguised_sale
-                 (or just describe the issue — auto-detected from scope signals).
+                 Partnership anti-abuse                  (Treas. Reg. 1.701-2 — 3 intent
+                                                          predicates + 7 F&C factors + aggregate)
+                 Culbertson partnership existence and §752 economic risk of loss are NOT wired yet.
+                 Pick with --doctrine see|disguised_sale|anti_abuse (or auto-detected from scope
+                 signals / form field names).
 
 HOW TO INPUT / WHERE FILES COME FROM
   • Guided + ROLE-BASED (recommended): --interview asks each party's real name (kept LOCAL, scrubbed
@@ -263,9 +266,15 @@ def main():
     if "economic_effect_paths_reachable" in ready:    # SEE
         print("  economic-effect paths reachable:",
               ", ".join(ready["economic_effect_paths_reachable"]) or "none")
-    if "fc_factors_reachable" in ready:               # disguised sale
+    if "fc_factors_reachable" in ready and "presumption_reachable" in ready:    # disguised sale
         print(f"  2-year presumption reachable: {ready['presumption_reachable']}")
         print(f"  facts-and-circumstances factors reachable ({len(ready['fc_factors_reachable'])} of 10): "
+              + (", ".join(ready["fc_factors_reachable"]) or "none"))
+    elif "fc_factors_reachable" in ready and "intent_predicates_reachable" in ready:    # anti-abuse
+        print(f"  Subchapter-K-intent predicates reachable: "
+              + (", ".join(ready["intent_predicates_reachable"]) or "none"))
+        print(f"  principal-purpose test reachable: {ready['principal_purpose_reachable']}")
+        print(f"  facts-and-circumstances factors reachable ({len(ready['fc_factors_reachable'])} of 7): "
               + (", ".join(ready["fc_factors_reachable"]) or "none"))
     if ready["factors_blocked"]:
         print("  factors the tool CANNOT reach from these facts:")

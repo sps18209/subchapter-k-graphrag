@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import subk_see
 import subk_disguised
+import subk_antiabuse
 
 DOCTRINES = {
     subk_see.DOCTRINE: subk_see,                  # "substantial_economic_effect"
     subk_disguised.DOCTRINE: subk_disguised,      # "disguised_sale"
+    subk_antiabuse.DOCTRINE: subk_antiabuse,      # "anti_abuse"
 }
 
 # Friendly aliases for command-line use.
@@ -21,6 +23,9 @@ ALIASES = {
     "see": subk_see.DOCTRINE, "704b": subk_see.DOCTRINE, "economic_effect": subk_see.DOCTRINE,
     "ds": subk_disguised.DOCTRINE, "disguised": subk_disguised.DOCTRINE,
     "707": subk_disguised.DOCTRINE, "1.707-3": subk_disguised.DOCTRINE,
+    "aa": subk_antiabuse.DOCTRINE, "antiabuse": subk_antiabuse.DOCTRINE,
+    "abuse": subk_antiabuse.DOCTRINE, "701-2": subk_antiabuse.DOCTRINE,
+    "1.701-2": subk_antiabuse.DOCTRINE,
 }
 
 
